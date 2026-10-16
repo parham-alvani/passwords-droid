@@ -22,6 +22,7 @@ import me.parham1995.passwords.feature.entry.EntryScreen
 import me.parham1995.passwords.feature.health.HealthScreen
 import me.parham1995.passwords.feature.history.HistoryScreen
 import me.parham1995.passwords.feature.list.ListScreen
+import me.parham1995.passwords.feature.recipients.RecipientsScreen
 import me.parham1995.passwords.feature.settings.SettingsScreen
 import me.parham1995.passwords.feature.setup.SetupScreen
 import javax.inject.Inject
@@ -49,6 +50,9 @@ object Preferences
 
 @Serializable
 object Health
+
+@Serializable
+object Recipients
 
 @Serializable
 data class History(
@@ -111,6 +115,9 @@ fun PasswordsNavHost() {
                 onDeleted = { nav.popBackStack(Entries, inclusive = false) },
             )
         }
+        composable<Recipients> {
+            RecipientsScreen(onBack = { nav.popBackStack() })
+        }
         composable<Health> {
             HealthScreen(onBack = { nav.popBackStack() }, onOpen = { nav.navigate(Entry(it)) })
         }
@@ -121,6 +128,7 @@ fun PasswordsNavHost() {
             SettingsScreen(
                 onBack = { nav.popBackStack() },
                 onHealth = { nav.navigate(Health) },
+                onRecipients = { nav.navigate(Recipients) },
                 onReset = { nav.navigate(Setup) { popUpTo(0) } },
             )
         }

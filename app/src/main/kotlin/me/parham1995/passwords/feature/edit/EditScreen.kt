@@ -91,6 +91,13 @@ fun EditScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             form.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            viewModel.template()?.let {
+                Text(
+                    "This folder has a .pass-template: leave the other fields empty and it fills them, as gopass generate does.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             OutlinedTextField(
                 value = form.name,
                 onValueChange = { v -> viewModel.edit { it.copy(name = v) } },

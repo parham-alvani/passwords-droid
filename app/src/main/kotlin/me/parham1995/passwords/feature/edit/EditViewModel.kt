@@ -15,6 +15,7 @@ import me.parham1995.passwords.data.MissingRecipients
 import me.parham1995.passwords.data.PasswordRepository
 import me.parham1995.passwords.store.PassEntry
 import me.parham1995.passwords.store.PasswordGenerator
+import me.parham1995.passwords.store.Templates
 import me.parham1995.passwords.unlock.Unlocker
 import me.parham1995.passwords.unlock.UnlockingViewModel
 
@@ -79,6 +80,20 @@ class EditViewModel
 
         fun edit(transform: (Form) -> Form) = _form.update { transform(it).copy(error = null) }
 
+        /** The `.pass-template` a new entry with the current name would get, if any. */
+        fun template(): String? =
+            if (original ==
+                null
+            ) {
+                _form.value.name
+                    .trim()
+                    .trim('/')
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { repository.templateFor(it) }
+            } else {
+                null
+            }
+
         fun generate() = edit { it.copy(password = PasswordGenerator.generate()) }
 
         fun save() =
@@ -107,8 +122,30 @@ class EditViewModel
                         otpUri = form.otp.trim().ifEmpty { null },
                         notes = form.notes.trimEnd(),
                     )
-                runCatching { repository.save(name, entry, previousName = original) }
-                    .onSuccess { _done.value = name }
+                // A new entry in a folder with a .pass-template is shaped by it, as
+                // `gopass generate` does -- unless something was typed beyond
+                // the password, which then wins.
+                val template =
+                    if (original == null &&
+                        known.isEmpty() &&
+                        entry.otpUri == null &&
+                        entry.notes.isEmpty()
+                    ) {
+                        repository.templateFor(name)
+                    } else {
+                        null
+                    }
+                runCatching {
+                    if (template != null) {
+                        repository.saveText(
+                            name,
+                            Templates.render(template, name, form.password),
+                            "Add given password for $name to store.",
+                        )
+                    } else {
+                        repository.save(name, entry, previousName = original)
+                    }
+                }.onSuccess { _done.value = name }
                     .onFailure { e ->
                         val message =
                             when (e) {

@@ -6,6 +6,7 @@ import me.parham1995.passwords.crypto.PgpCrypto
 import me.parham1995.passwords.crypto.WrongPassphrase
 import me.parham1995.passwords.data.git.StoreGit
 import me.parham1995.passwords.data.security.SecretBox
+import me.parham1995.passwords.store.Documents
 import me.parham1995.passwords.store.PassEntry
 import me.parham1995.passwords.store.PasswordHealth
 import me.parham1995.passwords.store.PasswordStore
@@ -340,6 +341,63 @@ class PasswordRepositoryTest {
             assertThat(counts).containsExactly("a", 42)
             assertThat(asked.all { it.length == 5 }).isTrue()
             assertThat(asked).doesNotContain("hunter2")
+        }
+
+    @Test
+    fun `documents open as files, and binary files are stored as gopass attachments`() =
+        runTest {
+            val repo = repository()
+            repo.sync()
+            val pem = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+            repo.saveText("vault/vso.pem", pem, "Add vso.pem.")
+            val opened = repo.openFollowing("vault/vso.pem", "pass".toCharArray())
+            assertThat(opened.document?.fileName).isEqualTo("vso.pem")
+            assertThat(String(opened.document!!.bytes)).isEqualTo(pem)
+
+            val binary = byteArrayOf(0, -1, 2, 3)
+            repo.saveText("vault/key.p12", Documents.attachment("key.p12", binary))
+            assertThat(repo.openFollowing("vault/key.p12", "pass".toCharArray()).document?.bytes).isEqualTo(binary)
+        }
+
+    @Test
+    fun `changing recipients re-encrypts the folder, exports keys, and is one commit`() =
+        runTest {
+            val repo = repository()
+            repo.sync()
+            repo.save("mine/a", PassEntry.parse("a-secret\n"))
+            repo.save("mine/b", PassEntry.parse("b-secret\n"))
+            val friendId = "0x" + friend.fingerprintHex().takeLast(16)
+            val meId = "0x" + me.fingerprintHex().takeLast(16)
+
+            repo.setRecipients("", listOf(meId, friendId), "pass".toCharArray())
+
+            // The friend can now read everything the root .gpg-id governs...
+            assertThat(
+                String(crypto.decrypt(File(workTree, "mine/a.gpg").readBytes(), listOf(friend), null)),
+            ).startsWith("a-secret")
+            // ...but not the shared/ folder, which has its own .gpg-id and was left alone.
+            assertThat(File(workTree, ".gpg-id").readText().lines()).containsAtLeast(meId, friendId)
+            assertThat(File(workTree, ".public-keys/$friendId").isFile).isTrue()
+            Git.open(origin).use { git ->
+                val head =
+                    git
+                        .log()
+                        .setMaxCount(1)
+                        .call()
+                        .first()
+                assertThat(head.fullMessage).isEqualTo("Reencrypt store for $meId, $friendId.")
+            }
+        }
+
+    @Test
+    fun `recipients that would lock this phone out are refused`() =
+        runTest {
+            val repo = repository()
+            repo.sync()
+            val friendId = "0x" + friend.fingerprintHex().takeLast(16)
+            val error = runCatching { repo.setRecipients("", listOf(friendId), "pass".toCharArray()) }.exceptionOrNull()
+            assertThat(error).isInstanceOf(IllegalArgumentException::class.java)
+            assertThat(File(workTree, ".gpg-id").readText()).doesNotContain(friendId)
         }
 
     @Test

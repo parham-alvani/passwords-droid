@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.parham1995.passwords.data.MissingRecipients
 import me.parham1995.passwords.data.PasswordRepository
+import me.parham1995.passwords.store.Documents
 import me.parham1995.passwords.store.PasswordStore
 import me.parham1995.passwords.store.Search
 import me.parham1995.passwords.store.StoreIcons
@@ -104,6 +106,36 @@ class ListViewModel
                     )
                 _syncing.value = false
             }
+
+        /**
+         * Stores a picked file at [name]: as itself when it is UTF-8 text --
+         * how the store already keeps certificates and VPN profiles -- and as
+         * a gopass attachment otherwise.
+         */
+        fun addFile(
+            name: String,
+            fileName: String,
+            bytes: ByteArray,
+        ) = viewModelScope.launch {
+            val text =
+                runCatching {
+                    Charsets.UTF_8
+                        .newDecoder()
+                        .decode(java.nio.ByteBuffer.wrap(bytes))
+                        .toString()
+                }.getOrNull()
+                    ?.takeIf { '\u0000' !in it }
+            val content = text ?: Documents.attachment(fileName, bytes)
+            val saved =
+                runCatching { repository.saveText(name.trim('/'), content, "Add file $fileName as ${name.trim('/')}.") }
+            _message.value =
+                saved.exceptionOrNull()?.let { e ->
+                    when (e) {
+                        is MissingRecipients -> "No public key for ${e.ids.joinToString()}"
+                        else -> "Could not add: ${e.message}"
+                    }
+                } ?: "Added $name"
+        }
 
         fun messageShown() {
             _message.value = null

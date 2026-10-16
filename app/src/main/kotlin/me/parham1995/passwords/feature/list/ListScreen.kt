@@ -1,11 +1,15 @@
 package me.parham1995.passwords.feature.list
 
+import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +26,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -46,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -74,6 +80,16 @@ fun ListScreen(
     val syncing by viewModel.syncing.collectAsState()
     val icons by viewModel.icons.collectAsState()
     var picking by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    var pickedFile by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
+    val pickFile =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) {
+                val fileName = displayName(context, uri) ?: "file"
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes != null && bytes.size <= MAX_FILE_BYTES) pickedFile = fileName to bytes
+            }
+        }
     val message by viewModel.message.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(message) {
@@ -102,7 +118,10 @@ fun ListScreen(
                         IconButton(onClick = { viewModel.up() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Up") }
                     }
                 },
-                actions = { IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "Settings") } },
+                actions = {
+                    TextButton(onClick = { pickFile.launch(arrayOf("*/*")) }) { Text("Add file") }
+                    IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "Settings") }
+                },
             )
         },
         floatingActionButton = {
@@ -193,6 +212,33 @@ fun ListScreen(
             onDismiss = { picking = null },
         )
     }
+
+    pickedFile?.let { (fileName, bytes) ->
+        var name by remember(fileName) { mutableStateOf(if (folder.isEmpty()) fileName else "$folder/$fileName") }
+        AlertDialog(
+            onDismissRequest = { pickedFile = null },
+            title = { Text("Add $fileName") },
+            text = {
+                Column {
+                    Text("${bytes.size} bytes, encrypted for this folder's recipients and committed.")
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Save as") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.addFile(name, fileName, bytes)
+                    pickedFile = null
+                }, enabled = name.isNotBlank()) { Text("Add") }
+            },
+            dismissButton = { TextButton(onClick = { pickedFile = null }) { Text("Cancel") } },
+        )
+    }
 }
 
 @Composable
@@ -276,3 +322,14 @@ private fun EntryRow(
 private fun Empty(text: String) {
     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { Text(text) }
 }
+
+/** Bigger files do not belong in a password store, and would be slow to encrypt on every device. */
+private const val MAX_FILE_BYTES = 5 * 1024 * 1024
+
+private fun displayName(
+    context: android.content.Context,
+    uri: android.net.Uri,
+): String? =
+    context.contentResolver
+        .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+        ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }

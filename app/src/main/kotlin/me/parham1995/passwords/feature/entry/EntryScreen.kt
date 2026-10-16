@@ -115,6 +115,10 @@ private fun EntryDetails(
         scope.launch { SecretClipboard.copy(context, label, value, viewModel.clipboardSeconds()) }
     }
 
+    opened.document?.let { document ->
+        DocumentCard(document, onCopy = { copy(document.fileName, it) })
+        return
+    }
     if (WifiQr.isWifi(viewModel.name, entry)) {
         var sharing by remember { mutableStateOf(false) }
         ElevatedCard(Modifier.fillMaxWidth()) {

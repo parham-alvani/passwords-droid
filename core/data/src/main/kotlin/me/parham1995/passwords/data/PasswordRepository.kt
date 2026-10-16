@@ -19,6 +19,7 @@ import me.parham1995.passwords.store.PasswordHealth
 import me.parham1995.passwords.store.PasswordStore
 import me.parham1995.passwords.store.Pwned
 import me.parham1995.passwords.store.StoreIcons
+import me.parham1995.passwords.store.Templates
 import org.bouncycastle.openpgp.api.OpenPGPCertificate
 import org.bouncycastle.openpgp.api.OpenPGPKey
 import org.eclipse.jgit.lib.PersonIdent
@@ -101,12 +102,18 @@ class PasswordRepository(
     suspend fun open(
         name: String,
         passphrase: CharArray?,
-    ): PassEntry =
+    ): PassEntry = PassEntry.parse(openText(name, passphrase))
+
+    /** The entry's decrypted text, exactly as stored. */
+    suspend fun openText(
+        name: String,
+        passphrase: CharArray?,
+    ): String =
         withContext(Dispatchers.Default) {
             val ciphertext = withContext(Dispatchers.IO) { store.file(name).readBytes() }
             val plain = crypto.decrypt(ciphertext, keyRing.secretKeys(), passphrase)
             try {
-                PassEntry.parse(String(plain, Charsets.UTF_8))
+                String(plain, Charsets.UTF_8)
             } finally {
                 plain.fill(0)
             }
@@ -122,7 +129,9 @@ class PasswordRepository(
         name: String,
         passphrase: CharArray?,
     ): Opened {
-        val entry = open(name, passphrase)
+        val text = openText(name, passphrase)
+        val entry = PassEntry.parse(text)
+        val document = Documents.of(name, text)
         val chain = mutableListOf(name)
         var target = entry
         while (true) {
@@ -133,7 +142,7 @@ class PasswordRepository(
             target = open(next, passphrase)
             chain += next
         }
-        return Opened(entry, target.password, chain.drop(1))
+        return Opened(entry, target.password, chain.drop(1), document)
     }
 
     /** An entry, and the password it resolves to after following [via]. */
@@ -141,6 +150,8 @@ class PasswordRepository(
         val entry: PassEntry,
         val password: String,
         val via: List<String>,
+        /** Set when the entry is a file (a certificate, a VPN profile) rather than a login. */
+        val document: Documents.Document? = null,
     )
 
     /**
@@ -154,8 +165,31 @@ class PasswordRepository(
         previousName: String? = null,
         message: String? = null,
     ) = lock.withLock {
+        writeText(name, entry.format(), previousName, message)
+    }
+
+    /**
+     * Stores [text] verbatim as [name]: what [save] does after formatting an
+     * entry, and how a file is kept -- as itself when it is text, the `pass
+     * insert -m` way, or as a gopass attachment when it is not.
+     */
+    suspend fun saveText(
+        name: String,
+        text: String,
+        message: String? = null,
+    ) = lock.withLock { writeText(name, text, null, message) }
+
+    /** New entries in a folder with a `.pass-template` are shaped by it, as with `gopass generate`. */
+    fun templateFor(name: String): String? = Templates.find(store.root, name)
+
+    private suspend fun writeText(
+        name: String,
+        text: String,
+        previousName: String?,
+        message: String?,
+    ) {
         val recipients = recipientsFor(name)
-        val ciphertext = withContext(Dispatchers.Default) { crypto.encrypt(entry.format().toByteArray(), recipients) }
+        val ciphertext = withContext(Dispatchers.Default) { crypto.encrypt(text.toByteArray(), recipients) }
         withContext(Dispatchers.IO) {
             // Through an alias, the write lands on the real file and the
             // commit names it; git will not stage a path through a symlink.
@@ -174,6 +208,97 @@ class PasswordRepository(
                 }
             val paths = listOfNotNull(relative(real), previousReal?.takeIf { renamed }?.let(::relative))
             commitAndPush(commitMessage, paths)
+        }
+        refresh()
+    }
+
+    /** The ids a folder is encrypted for, and the folder whose `.gpg-id` says so ("" for the root). */
+    fun recipients(folder: String): Pair<String, List<String>> {
+        var dir = folder.trim('/')
+        while (true) {
+            val ids =
+                java.io.File(
+                    store.root,
+                    if (dir.isEmpty()) PasswordStore.GPG_ID else "$dir/${PasswordStore.GPG_ID}",
+                )
+            if (ids.isFile) return dir to PasswordStore.parseGpgId(ids.readText())
+            if (dir.isEmpty()) return "" to emptyList()
+            dir = dir.substringBeforeLast('/', "")
+        }
+    }
+
+    /** Every certificate the app knows: imported keys and gopass's exported `.public-keys`. */
+    fun knownCertificates(): List<OpenPGPCertificate> =
+        (keyRing.all() + exportedCertificates()).distinctBy {
+            it.keyIdentifier
+        }
+
+    /**
+     * Changes who [folder] is encrypted for, the way `gopass recipients add`
+     * and `pass init -p` do: writes its `.gpg-id`, re-encrypts every entry it
+     * governs (not those under a subfolder with its own `.gpg-id`), exports
+     * any new recipient's public key to `.public-keys` as gopass does, and
+     * commits it all as one change.
+     *
+     * Refuses to leave out every key this phone can decrypt with -- that would
+     * lock the phone out of the folder it is re-encrypting.
+     */
+    suspend fun setRecipients(
+        folder: String,
+        ids: List<String>,
+        passphrase: CharArray?,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ) = lock.withLock {
+        val dir = folder.trim('/')
+        require(ids.isNotEmpty()) { "a folder needs at least one recipient" }
+        val known = knownCertificates()
+        val missing = ids.filter { id -> known.none { PgpCrypto.matches(it, id) } }
+        if (missing.isNotEmpty()) throw MissingRecipients(missing)
+        val certs = ids.map { id -> known.first { PgpCrypto.matches(it, id) } }.distinctBy { it.keyIdentifier }
+        require(keyRing.secretKeys().any { key -> ids.any { PgpCrypto.matches(key, it) } }) {
+            "none of these recipients is a key this phone holds; it could not read the folder afterwards"
+        }
+        val governed =
+            items.value
+                .filter { it.aliasOf == null }
+                .map { it.name }
+                .filter { name ->
+                    (dir.isEmpty() || name.startsWith("$dir/")) &&
+                        recipients(name.substringBeforeLast('/', "")).first == dir
+                }
+        val paths = mutableListOf<String>()
+        withContext(Dispatchers.Default) {
+            governed.forEachIndexed { index, name ->
+                val bytes = withContext(Dispatchers.IO) { store.file(name).readBytes() }
+                val plain = crypto.decrypt(bytes, keyRing.secretKeys(), passphrase)
+                val cipher = crypto.encrypt(plain, certs).also { plain.fill(0) }
+                withContext(Dispatchers.IO) { store.file(name).writeBytes(cipher) }
+                paths += relative(name)
+                onProgress(index + 1, governed.size)
+            }
+        }
+        withContext(Dispatchers.IO) {
+            val gpgId = if (dir.isEmpty()) PasswordStore.GPG_ID else "$dir/${PasswordStore.GPG_ID}"
+            java.io
+                .File(
+                    store.root,
+                    gpgId,
+                ).apply { parentFile?.mkdirs() }
+                .writeText(ids.joinToString("\n", postfix = "\n"))
+            paths += gpgId
+            val exported = java.io.File(store.root, PasswordStore.PUBLIC_KEYS)
+            ids.forEach { id ->
+                val file = java.io.File(exported, id)
+                if (!file.isFile && exported.isDirectory) {
+                    val cert = certs.first { PgpCrypto.matches(it, id) }
+                    file.writeText(((cert as? OpenPGPKey)?.toCertificate() ?: cert).toAsciiArmoredString())
+                    paths += "${PasswordStore.PUBLIC_KEYS}/$id"
+                }
+            }
+            commitAndPush(
+                "Reencrypt ${dir.ifEmpty { "store" }} for ${ids.joinToString()}.",
+                paths,
+            )
         }
         refresh()
     }

@@ -51,6 +51,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onReset: () -> Unit,
     onHealth: () -> Unit,
+    onRecipients: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val settings by viewModel.settings.collectAsState()
@@ -125,6 +126,11 @@ fun SettingsScreen(
             Section("Password health") {
                 Text("Find weak, reused, old and breached passwords.")
                 OutlinedButton(onClick = onHealth) { Text("Check passwords") }
+            }
+
+            Section("Recipients") {
+                Text("Who the store is encrypted for (.gpg-id), and re-encrypting it for someone new.")
+                OutlinedButton(onClick = onRecipients) { Text("Manage recipients") }
             }
 
             Section("OpenPGP keys") {
