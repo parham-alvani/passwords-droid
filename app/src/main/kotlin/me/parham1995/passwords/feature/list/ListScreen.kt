@@ -102,8 +102,10 @@ fun ListScreen(
                     ListItem(
                         headlineContent = { Text(item.leaf) },
                         supportingContent = {
-                            if (item.folder.isNotEmpty()) {
-                                Text(item.folder, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            val context =
+                                listOfNotNull(item.folder.ifEmpty { null }, item.aliasOf?.let { "alias of $it" })
+                            if (context.isNotEmpty()) {
+                                Text(context.joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         },
                         leadingContent = { Icon(Icons.Default.Lock, null) },

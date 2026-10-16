@@ -3,6 +3,7 @@ package me.parham1995.passwords
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -62,8 +63,12 @@ fun PasswordsNavHost() {
     val configured by start.configured.collectAsState()
     // Wait for settings, so a configured app never flashes the setup screen.
     val ready = configured ?: return
+    // Decided once. Setup saves the settings before it clones, and a start
+    // destination that followed them would swap the graph out from under the
+    // setup screen mid-clone -- cancelling it and leaving an empty list.
+    val startDestination: Any = remember { if (ready) Entries else Setup }
     val nav = rememberNavController()
-    NavHost(navController = nav, startDestination = if (ready) Entries else Setup) {
+    NavHost(navController = nav, startDestination = startDestination) {
         composable<Setup> {
             SetupScreen(onDone = { nav.navigate(Entries) { popUpTo(Setup) { inclusive = true } } })
         }

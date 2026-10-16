@@ -177,6 +177,49 @@ class PasswordRepositoryTest {
         }
 
     @Test
+    fun `edits and deletes through symlinks touch the right files`() =
+        runTest {
+            Git.open(origin).use { git ->
+                java.nio.file.Files
+                    .createSymbolicLink(File(origin, "gh").toPath(), File("github.com").toPath())
+                File(origin, "alias").mkdirs()
+                java.nio.file.Files.createSymbolicLink(
+                    File(origin, "alias/parham.gpg").toPath(),
+                    File("../github.com/parham.gpg").toPath(),
+                )
+                git.add().addFilepattern(".").call()
+                git
+                    .commit()
+                    .setMessage("aliases")
+                    .setAuthor("Desk", "desk@example.com")
+                    .setSign(false)
+                    .call()
+            }
+            val repo = repository()
+            repo.sync()
+            assertThat(
+                repo.items.value.map { it.name },
+            ).containsExactly("alias/parham", "gh/parham", "github.com/parham")
+
+            repo.save("gh/parham", PassEntry.parse("changed\nlogin: parham\n"), previousName = "gh/parham")
+            assertThat(repo.open("github.com/parham", "pass".toCharArray()).password).isEqualTo("changed")
+
+            repo.delete("alias/parham")
+            assertThat(File(workTree, "github.com/parham.gpg").isFile).isTrue()
+            Git.open(origin).use { git ->
+                val head =
+                    git
+                        .log()
+                        .setMaxCount(2)
+                        .call()
+                        .toList()
+                assertThat(head[0].fullMessage).isEqualTo("Remove alias/parham from store.")
+                assertThat(head[1].fullMessage).isEqualTo("Edit password for gh/parham using passwords-droid.")
+            }
+            assertThat(repo.items.value.map { it.name }).containsExactly("gh/parham", "github.com/parham")
+        }
+
+    @Test
     fun `a wrong passphrase does not decrypt`() =
         runTest {
             val repo = repository()

@@ -115,18 +115,22 @@ class PasswordRepository(
         val recipients = recipientsFor(name)
         val ciphertext = withContext(Dispatchers.Default) { crypto.encrypt(entry.format().toByteArray(), recipients) }
         withContext(Dispatchers.IO) {
-            val target = store.file(name)
+            // Through an alias, the write lands on the real file and the
+            // commit names it; git will not stage a path through a symlink.
+            val real = store.realName(name)
+            val previousReal = previousName?.let(store::realName)
+            val target = store.file(real)
             target.parentFile?.mkdirs()
             target.writeBytes(ciphertext)
-            val renamed = previousName != null && previousName != name
-            if (renamed) store.file(previousName).delete()
+            val renamed = previousReal != null && previousReal != real
+            if (renamed) store.file(previousReal).delete()
             val message =
                 when {
                     renamed -> "Rename $previousName to $name."
                     previousName == null -> "Add given password for $name to store."
                     else -> "Edit password for $name using passwords-droid."
                 }
-            val paths = listOfNotNull(relative(name), previousName?.takeIf { renamed }?.let(::relative))
+            val paths = listOfNotNull(relative(real), previousReal?.takeIf { renamed }?.let(::relative))
             commitAndPush(message, paths)
         }
         refresh()
@@ -135,8 +139,11 @@ class PasswordRepository(
     suspend fun delete(name: String) =
         lock.withLock {
             withContext(Dispatchers.IO) {
-                store.file(name).delete()
-                commitAndPush("Remove $name from store.", listOf(relative(name)))
+                // A file alias goes on its own; the entry it points at stays.
+                val own = if (store.isAlias(name)) store.ownName(name) else store.realName(name)
+                java.nio.file.Files
+                    .delete(java.io.File(store.root, relative(own)).toPath())
+                commitAndPush("Remove $name from store.", listOf(relative(own)))
             }
             refresh()
         }
