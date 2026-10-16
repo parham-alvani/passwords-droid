@@ -119,8 +119,11 @@ class SetupViewModel
         fun generateSshKey() =
             viewModelScope.launch {
                 _state.update { it.copy(busy = true) }
-                val line = sshKeys.generate()
-                _state.update { it.copy(busy = false, sshPublicKey = line) }
+                runCatching { sshKeys.generate() }
+                    .onSuccess { line -> _state.update { it.copy(busy = false, sshPublicKey = line) } }
+                    .onFailure { e ->
+                        _state.update { it.copy(busy = false, message = "Could not make a key: ${e.message}") }
+                    }
             }
 
         /** GitHub's "add deploy key" page for the repository in [State.remoteUrl], if it is on GitHub. */

@@ -40,6 +40,21 @@ object AndroidGitEnvironment {
         if (installed) return
         configDir.mkdirs()
 
+        // sshd turns on its BouncyCastle registrar whenever BouncyCastle is on
+        // the classpath, and here it is -- PGPainless needs it. On Android the
+        // name "BC" resolves to the platform's cut-down copy, which has no
+        // named EC curves, so ECCurves' static initialiser dies with "No EC
+        // params for nistp384" and takes KeyUtils -- every key algorithm --
+        // with it. Only EdDSA and the platform JCE are wanted; PGPainless uses
+        // its own BouncyCastle instance and is unaffected. Read from system
+        // properties, so it has to be set before the first sshd class loads.
+        System.setProperty("org.apache.sshd.registerBouncyCastle", "false")
+        System.setProperty(
+            "org.apache.sshd.security.registrars",
+            "org.apache.sshd.common.util.security.eddsa.EdDSASecurityProviderRegistrar," +
+                "org.apache.sshd.common.util.security.SunJCESecurityProviderRegistrar",
+        )
+
         // Must come before anything loads an sshd class, including indirectly.
         PathUtils.setUserHomeFolderResolver { configDir.toPath() }
 
