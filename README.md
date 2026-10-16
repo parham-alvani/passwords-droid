@@ -20,6 +20,12 @@ Early, and used daily on one phone. Set up, sync, browse, search, open, copy, ed
 - **Autofill everywhere** — a classic autofill service for Chrome and apps, and a Credential Manager provider for Android's own sign-in sheet; suggestions appear in the keyboard, each stays locked until a fingerprint opens just that entry, and a login typed into a form can be saved as a new entry
 - **Matching by name, nothing decrypted** — a site matches the folder named after its domain (`work/github.com/me` fills on `github.com` and its subdomains), an app through its package read as a reversed domain; lookalikes such as `evilgithub.com` match nothing, and a browser is only believed about the page when it is a known, correctly signed browser
 - **Folders and icons** — browse the store as folders; top-level folders carry Lucide icons kept in `.icons.json`, which gopass ignores
+- **Wi-Fi as a QR code** — entries under `wifi/` (or with an `ssid` field) show a code a guest's camera joins from
+- **Password health** — weak (zxcvbn), reused and years-old passwords, plus an opt-in breach check that sends Have I Been Pwned only the first 5 characters of each password's SHA-1
+- **History** — every version of an entry from git, and restoring one as a new commit
+- **Files** — certificates, keys and VPN profiles open as files with copy and save-as; any file can be added, as text or as a gopass attachment
+- **gopass templates** — a folder's `.pass-template` shapes new entries in it, as `gopass generate` does
+- **Recipients** — see who a `.gpg-id` names and re-encrypt a folder or the whole store for a new set, as one commit
 - **Compatible with `pass` and gopass** — the first line is the password; `key: value` lines, gopass's YAML body and `otpauth://` URIs are understood; files are written back in the same shape they were read in
 - **Every recipient, every time** — an entry is encrypted for everyone in the nearest `.gpg-id`, using imported keys and gopass's exported `.public-keys`; a save that would leave a recipient out is refused instead
 - **Git over SSH** — the deploy key is generated on the phone and never leaves it; GitHub's host keys are pinned; pulls rebase, so history stays a straight line; an edit made offline is committed and pushed with the next sync
@@ -53,6 +59,7 @@ Early, and used daily on one phone. Set up, sync, browse, search, open, copy, ed
 - [x] Autofill service for Chrome and apps
 - [ ] Passkeys stored in the store, compatible with [Password Store's format](https://github.com/agrahn/Android-Password-Store/blob/main/PasskeyStorage.md)
 - [ ] Quick Settings tile and home-screen widget for one-time codes
+- [x] Wi-Fi QR codes, password health, entry history, files, templates, recipients
 - [ ] Diceware passphrases
 - [ ] OpenPGP smart cards over NFC (YubiKey)
 
