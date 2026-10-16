@@ -73,6 +73,9 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 
 thirdparty-logcat = "com.squareup.logcat:logcat:0.4"
 
+# QR codes for sharing Wi-Fi; core only, no Android UI
+zxing-core = "com.google.zxing:core:3.5.4"
+
 # crypto
 pgpainless = { group = "org.pgpainless", name = "pgpainless-core", version.ref = "pgpainless" }
 

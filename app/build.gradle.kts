@@ -112,6 +112,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.autofill)
+    implementation(libs.zxing.core)
     implementation(projects.autofillParser)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

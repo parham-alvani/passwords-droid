@@ -46,6 +46,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.parham1995.passwords.data.PasswordRepository
 import me.parham1995.passwords.store.Totp
+import me.parham1995.passwords.store.WifiQr
 import me.parham1995.passwords.ui.SecretClipboard
 import me.parham1995.passwords.unlock.UnlockPrompts
 
@@ -112,6 +113,25 @@ private fun EntryDetails(
         scope.launch { SecretClipboard.copy(context, label, value, viewModel.clipboardSeconds()) }
     }
 
+    if (WifiQr.isWifi(viewModel.name, entry)) {
+        var sharing by remember { mutableStateOf(false) }
+        ElevatedCard(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Wi-Fi network", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = { sharing = true }) { Text("Share as QR") }
+            }
+        }
+        if (sharing) {
+            // The resolved password: a gopass reference shares the network it points at.
+            WifiQrDialog(WifiQr.networkOf(viewModel.name, entry.copy(password = opened.password)), onDismiss = {
+                sharing =
+                    false
+            })
+        }
+    }
     SecretRow("Password", opened.password, secret = true, onCopy = { copy("Password", opened.password) })
     opened.via.lastOrNull()?.let { target ->
         TextButton(onClick = { onOpen(target) }) {
