@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.CancellationSignal
 import android.os.OutcomeReceiver
+import android.util.Log
 import androidx.credentials.exceptions.ClearCredentialException
 import androidx.credentials.exceptions.CreateCredentialException
 import androidx.credentials.exceptions.CreateCredentialUnknownException
@@ -81,6 +82,9 @@ class PasswordsCredentialService : CredentialProviderService() {
                         .build()
             }
         }
+        // Who asked and how many names matched -- never a secret, and it is
+        // the only way to tell "not asked" from "asked, matched nothing".
+        Log.i(TAG, "request from ${caller?.packageName} as $target: ${entries.size} entries")
         val search = Action.Builder(getString(R.string.credman_search), CredentialActivity.search(this)).build()
         return BeginGetCredentialResponse
             .Builder()
@@ -117,6 +121,8 @@ class PasswordsCredentialService : CredentialProviderService() {
     }
 
     internal companion object {
+        private const val TAG = "PasswordsCredman"
+
         /** One request code per entry name, so each entry's PendingIntent is its own. */
         fun pending(
             service: android.content.Context,
