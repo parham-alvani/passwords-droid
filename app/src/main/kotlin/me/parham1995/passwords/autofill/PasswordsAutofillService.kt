@@ -165,7 +165,7 @@ class PasswordsAutofillService : AutofillService() {
     ) = RemoteViews(packageName, R.layout.autofill_dataset).apply {
         setTextViewText(R.id.title, title)
         setTextViewText(R.id.subtitle, subtitle.orEmpty())
-        setImageViewResource(R.id.icon, R.mipmap.ic_launcher)
+        setImageViewResource(R.id.icon, R.drawable.ic_autofill_key)
     }
 
     // `.slice` is how the androidx inline UI is handed to the platform, as its
@@ -185,7 +185,7 @@ class PasswordsAutofillService : AutofillService() {
                 .newContentBuilder(attribution)
                 .setTitle(title)
                 .apply { subtitle?.takeIf { it.isNotEmpty() }?.let { setSubtitle(it) } }
-                .setStartIcon(Icon.createWithResource(this, R.mipmap.ic_launcher))
+                .setStartIcon(Icon.createWithResource(this, R.drawable.ic_autofill_key))
                 .setContentDescription(listOfNotNull(title, subtitle).joinToString(" - "))
                 .build()
                 .slice
