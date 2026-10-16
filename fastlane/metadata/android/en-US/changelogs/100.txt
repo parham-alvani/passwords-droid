@@ -1,0 +1,1 @@
+First version: open, search, edit and sync a pass/gopass store, with fingerprint unlock.

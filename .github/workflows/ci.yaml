@@ -1,0 +1,74 @@
+---
+name: Continuous Integration
+on:
+  push:
+  pull_request:
+
+# A newer push to the same branch makes the older run's answer irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Format and linting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew ktlintCheck lintDebug
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew test
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: test-reports
+          path: "**/build/reports/tests/"
+
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v7
+        with:
+          name: passwords-droid-debug
+          path: app/build/outputs/apk/debug/*.apk
+
+  # R8 only runs on release builds, and the release workflow is the only other
+  # place one is built -- so without this job a stripped class or a
+  # release-only lint error is first seen after the version has been bumped and
+  # tagged. With no keystore the build signs with the debug key, which is all a
+  # check needs.
+  release:
+    name: Release build survives R8
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew lintRelease assembleRelease
+      - run: ./tools/verify-apk.sh app/build/outputs/apk/release/app-release.apk
