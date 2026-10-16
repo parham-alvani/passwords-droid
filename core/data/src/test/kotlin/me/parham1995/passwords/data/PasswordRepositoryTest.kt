@@ -8,6 +8,7 @@ import me.parham1995.passwords.data.git.StoreGit
 import me.parham1995.passwords.data.security.SecretBox
 import me.parham1995.passwords.store.PassEntry
 import me.parham1995.passwords.store.PasswordStore
+import me.parham1995.passwords.store.StoreIcons
 import org.eclipse.jgit.api.Git
 import org.junit.After
 import org.junit.Assert.assertThrows
@@ -217,6 +218,33 @@ class PasswordRepositoryTest {
                 assertThat(head[1].fullMessage).isEqualTo("Edit password for gh/parham using passwords-droid.")
             }
             assertThat(repo.items.value.map { it.name }).containsExactly("gh/parham", "github.com/parham")
+        }
+
+    @Test
+    fun `folder icons are committed to the store and read back`() =
+        runTest {
+            val repo = repository()
+            repo.sync()
+            repo.setFolderIcon("github.com", StoreIcons.Icon("github", "purple"))
+            assertThat(repo.icons.value.folder("github.com")).isEqualTo(StoreIcons.Icon("github", "purple"))
+            // Setting the same icon again is not another commit.
+            repo.setFolderIcon("github.com", StoreIcons.Icon("github", "purple"))
+
+            Git.open(origin).use { git ->
+                val log =
+                    git
+                        .log()
+                        .setMaxCount(2)
+                        .call()
+                        .toList()
+                assertThat(log[0].fullMessage).isEqualTo("Set icon for github.com.")
+                assertThat(log[1].fullMessage).isEqualTo("seed")
+            }
+            assertThat(File(workTree, ".icons.json").readText()).contains("\"github\"")
+            assertThat(repo.items.value.map { it.name }).containsExactly("github.com/parham")
+
+            repo.setFolderIcon("github.com", null)
+            assertThat(repo.icons.value.folder("github.com")).isNull()
         }
 
     @Test

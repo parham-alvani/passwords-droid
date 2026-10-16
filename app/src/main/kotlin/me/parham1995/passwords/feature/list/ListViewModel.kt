@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import me.parham1995.passwords.data.PasswordRepository
 import me.parham1995.passwords.store.PasswordStore
 import me.parham1995.passwords.store.Search
+import me.parham1995.passwords.store.StoreIcons
 import me.parham1995.passwords.store.StoreTree
 import javax.inject.Inject
 
@@ -46,6 +47,16 @@ class ListViewModel
 
         private val _message = MutableStateFlow<String?>(null)
         val message: StateFlow<String?> = _message.asStateFlow()
+
+        val icons: StateFlow<StoreIcons> = repository.icons
+
+        fun setIcon(
+            folder: String,
+            icon: StoreIcons.Icon?,
+        ) = viewModelScope.launch {
+            runCatching { repository.setFolderIcon(folder, icon) }
+                .onFailure { _message.value = "Could not save the icon: ${it.message}" }
+        }
 
         val total: StateFlow<Int> =
             combine(repository.items, _query) { items, _ -> items.size }

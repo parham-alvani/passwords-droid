@@ -11,6 +11,7 @@ import me.parham1995.passwords.crypto.PgpCrypto
 import me.parham1995.passwords.data.git.StoreGit
 import me.parham1995.passwords.store.PassEntry
 import me.parham1995.passwords.store.PasswordStore
+import me.parham1995.passwords.store.StoreIcons
 import org.bouncycastle.openpgp.api.OpenPGPCertificate
 import org.bouncycastle.openpgp.api.OpenPGPKey
 import org.eclipse.jgit.lib.PersonIdent
@@ -34,10 +35,42 @@ class PasswordRepository(
     private val _items = MutableStateFlow<List<PasswordStore.Item>>(emptyList())
     val items: StateFlow<List<PasswordStore.Item>> = _items.asStateFlow()
 
+    private val _icons = MutableStateFlow(StoreIcons.EMPTY)
+
+    /** Folder icons from the store's `.icons.json`, which gopass ignores. */
+    val icons: StateFlow<StoreIcons> = _icons.asStateFlow()
+
+    private val iconsFile get() = java.io.File(store.root, StoreIcons.FILE)
+
     suspend fun refresh() =
         withContext(Dispatchers.IO) {
             _items.value = store.items()
+            _icons.value = if (iconsFile.isFile) StoreIcons.parse(iconsFile.readText()) else StoreIcons.EMPTY
         }
+
+    /** Sets or, with null, removes a folder's icon, as one commit like any other change. */
+    suspend fun setFolderIcon(
+        path: String,
+        icon: StoreIcons.Icon?,
+    ) = lock.withLock {
+        withContext(Dispatchers.IO) {
+            val current = if (iconsFile.isFile) StoreIcons.parse(iconsFile.readText()) else StoreIcons.EMPTY
+            if (current.folder(path) == icon) return@withContext
+            val updated = current.withFolder(path, icon)
+            iconsFile.writeText(updated.format())
+            commitAndPush(
+                if (icon ==
+                    null
+                ) {
+                    "Remove icon for $path."
+                } else {
+                    "Set icon for $path."
+                },
+                listOf(StoreIcons.FILE),
+            )
+        }
+        refresh()
+    }
 
     /**
      * The secret key that can open [name], so the caller knows whose

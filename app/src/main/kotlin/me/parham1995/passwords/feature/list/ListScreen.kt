@@ -1,7 +1,9 @@
 package me.parham1995.passwords.feature.list
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -39,7 +41,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -50,7 +54,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import me.parham1995.passwords.R
 import me.parham1995.passwords.store.PasswordStore
+import me.parham1995.passwords.store.StoreIcons
 import me.parham1995.passwords.store.StoreTree
+import me.parham1995.passwords.ui.icon.LucideIcon
+import me.parham1995.passwords.ui.icon.iconColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,6 +72,8 @@ fun ListScreen(
     val folder by viewModel.folder.collectAsState()
     val total by viewModel.total.collectAsState()
     val syncing by viewModel.syncing.collectAsState()
+    val icons by viewModel.icons.collectAsState()
+    var picking by remember { mutableStateOf<String?>(null) }
     val message by viewModel.message.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(message) {
@@ -138,7 +147,15 @@ fun ListScreen(
                     is ListViewModel.Content.Browsing -> {
                         if (folder.isNotEmpty()) item(key = "crumbs") { Breadcrumbs(folder, onOpen = viewModel::open) }
                         items(current.listing.folders, key = { "f:" + it.path }) { child ->
-                            FolderRow(child, onClick = { viewModel.open(child.path) })
+                            // Icons are for the top level: the contexts a store is
+                            // split into. Deeper folders are mostly domains.
+                            val topLevel = '/' !in child.path
+                            FolderRow(
+                                child,
+                                icon = icons.folder(child.path),
+                                onClick = { viewModel.open(child.path) },
+                                onLongClick = if (topLevel) ({ picking = child.path }) else null,
+                            )
                         }
                         if (current.listing.folders.isNotEmpty() && current.listing.entries.isNotEmpty()) {
                             item(key = "divider") { HorizontalDivider(Modifier.padding(horizontal = 16.dp)) }
@@ -164,6 +181,18 @@ fun ListScreen(
             }
         }
     }
+
+    picking?.let { folder ->
+        IconPicker(
+            folder = folder,
+            current = icons.folder(folder),
+            onPick = { icon ->
+                viewModel.setIcon(folder, icon)
+                picking = null
+            },
+            onDismiss = { picking = null },
+        )
+    }
 }
 
 @Composable
@@ -183,10 +212,13 @@ private fun Breadcrumbs(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FolderRow(
     folder: StoreTree.Folder,
+    icon: StoreIcons.Icon?,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
 ) {
     ListItem(
         headlineContent = { Text(folder.name) },
@@ -197,14 +229,23 @@ private fun FolderRow(
             )
         },
         leadingContent = {
-            Icon(
-                painterResource(R.drawable.ic_folder),
-                null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
+            if (icon != null) {
+                LucideIcon(
+                    icon.name,
+                    tint = iconColor(icon.color, MaterialTheme.colorScheme.primary),
+                    contentDescription = icon.name,
+                )
+            } else {
+                Icon(painterResource(R.drawable.ic_folder), null, tint = MaterialTheme.colorScheme.primary)
+            }
         },
         trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier =
+            Modifier.combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+                onLongClickLabel = "Change icon",
+            ),
     )
 }
 
