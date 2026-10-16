@@ -1,4 +1,5 @@
 <div align="center">
+   <img src="art/icon-512.png" alt="A panda hugging a golden padlock and holding a key" width="160">
    <h1>Passwords Droid</h1>
    <img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/parham-alvani/passwords-droid/ci.yaml?style=for-the-badge&logo=github">
    <img alt="License" src="https://img.shields.io/github/license/parham-alvani/passwords-droid?style=for-the-badge">

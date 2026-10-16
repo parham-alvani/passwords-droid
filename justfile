@@ -101,3 +101,8 @@ bump version:
     echo "  1. write $log"
     echo "  2. git commit -am 'chore: release {{ version }}'"
     echo "  3. git tag -a v{{ version }} -m 'v{{ version }}' && git push --follow-tags"
+
+# rebuild the launcher icon from art/icon.png (needs Pillow); writes a preview to /tmp
+[group('release')]
+icon:
+    python3 tools/icon.py art/icon.png . /tmp
