@@ -1,14 +1,20 @@
 package me.parham1995.passwords.feature.list
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Lock
@@ -16,6 +22,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -25,6 +32,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -34,10 +42,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import me.parham1995.passwords.R
+import me.parham1995.passwords.store.PasswordStore
+import me.parham1995.passwords.store.StoreTree
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,8 +60,10 @@ fun ListScreen(
     onSettings: () -> Unit,
     viewModel: ListViewModel = hiltViewModel(),
 ) {
-    val items by viewModel.items.collectAsState()
+    val content by viewModel.content.collectAsState()
     val query by viewModel.query.collectAsState()
+    val folder by viewModel.folder.collectAsState()
+    val total by viewModel.total.collectAsState()
     val syncing by viewModel.syncing.collectAsState()
     val message by viewModel.message.collectAsState()
     val snackbar = remember { SnackbarHostState() }
@@ -58,16 +73,31 @@ fun ListScreen(
             viewModel.messageShown()
         }
     }
+    // Back clears a search first, then climbs folders, then leaves.
+    BackHandler(enabled = query.isNotEmpty() || folder.isNotEmpty()) {
+        if (query.isNotEmpty()) viewModel.search("") else viewModel.up()
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Passwords") },
+                title = {
+                    Text(
+                        folder.substringAfterLast('/').ifEmpty { "Passwords" },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                navigationIcon = {
+                    if (folder.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.up() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Up") }
+                    }
+                },
                 actions = { IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "Settings") } },
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { onAdd("") }) { Icon(Icons.Default.Add, "New entry") }
+            FloatingActionButton(onClick = { onAdd(folder) }) { Icon(Icons.Default.Add, "New entry") }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
@@ -77,11 +107,11 @@ fun ListScreen(
             modifier = Modifier.padding(padding).fillMaxSize(),
         ) {
             LazyColumn(Modifier.fillMaxSize()) {
-                item {
+                item(key = "search") {
                     OutlinedTextField(
                         value = query,
                         onValueChange = viewModel::search,
-                        placeholder = { Text("Search ${items.size} entries") },
+                        placeholder = { Text("Search $total entries") },
                         leadingIcon = { Icon(Icons.Default.Search, null) },
                         trailingIcon = {
                             if (query.isNotEmpty()) {
@@ -98,28 +128,110 @@ fun ListScreen(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     )
                 }
-                items(items, key = { it.name }) { item ->
-                    ListItem(
-                        headlineContent = { Text(item.leaf) },
-                        supportingContent = {
-                            val context =
-                                listOfNotNull(item.folder.ifEmpty { null }, item.aliasOf?.let { "alias of $it" })
-                            if (context.isNotEmpty()) {
-                                Text(context.joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                when (val current = content) {
+                    is ListViewModel.Content.Searching -> {
+                        items(current.results, key = { "s:" + it.name }) { item ->
+                            EntryRow(item, showFolder = true, onClick = { onOpen(item.name) })
+                        }
+                        if (current.results.isEmpty()) item(key = "none") { Empty("Nothing matches") }
+                    }
+                    is ListViewModel.Content.Browsing -> {
+                        if (folder.isNotEmpty()) item(key = "crumbs") { Breadcrumbs(folder, onOpen = viewModel::open) }
+                        items(current.listing.folders, key = { "f:" + it.path }) { child ->
+                            FolderRow(child, onClick = { viewModel.open(child.path) })
+                        }
+                        if (current.listing.folders.isNotEmpty() && current.listing.entries.isNotEmpty()) {
+                            item(key = "divider") { HorizontalDivider(Modifier.padding(horizontal = 16.dp)) }
+                        }
+                        items(current.listing.entries, key = { "e:" + it.name }) { item ->
+                            EntryRow(item, showFolder = false, onClick = { onOpen(item.name) })
+                        }
+                        if (current.listing.isEmpty) {
+                            item(key = "none") {
+                                Empty(
+                                    if (total ==
+                                        0
+                                    ) {
+                                        "Pull down to sync the store"
+                                    } else {
+                                        "This folder is empty"
+                                    },
+                                )
                             }
-                        },
-                        leadingContent = { Icon(Icons.Default.Lock, null) },
-                        modifier = Modifier.clickable { onOpen(item.name) },
-                    )
-                }
-                if (items.isEmpty()) {
-                    item {
-                        Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                            Text(if (query.isEmpty()) "Pull down to sync the store" else "Nothing matches")
                         }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun Breadcrumbs(
+    folder: String,
+    onOpen: (String) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(onClick = { onOpen("") }) { Text("Store") }
+        StoreTree.crumbs(folder).forEach { (name, path) ->
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = { onOpen(path) }, enabled = path != folder) { Text(name) }
+        }
+    }
+}
+
+@Composable
+private fun FolderRow(
+    folder: StoreTree.Folder,
+    onClick: () -> Unit,
+) {
+    ListItem(
+        headlineContent = { Text(folder.name) },
+        supportingContent = {
+            Text(
+                if (folder.count == 1) "1 entry" else "${folder.count} entries",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        leadingContent = {
+            Icon(
+                painterResource(R.drawable.ic_folder),
+                null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        },
+        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
+        modifier = Modifier.clickable(onClick = onClick),
+    )
+}
+
+@Composable
+private fun EntryRow(
+    item: PasswordStore.Item,
+    showFolder: Boolean,
+    onClick: () -> Unit,
+) {
+    ListItem(
+        headlineContent = { Text(item.leaf) },
+        supportingContent = {
+            val context =
+                listOfNotNull(
+                    item.folder.takeIf { showFolder && it.isNotEmpty() },
+                    item.aliasOf?.let { "alias of $it" },
+                )
+            if (context.isNotEmpty()) {
+                Text(context.joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        leadingContent = { Icon(Icons.Default.Lock, null) },
+        modifier = Modifier.clickable(onClick = onClick),
+    )
+}
+
+@Composable
+private fun Empty(text: String) {
+    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { Text(text) }
 }
