@@ -72,6 +72,37 @@ class PasswordRepository(
         }
 
     /**
+     * Opens [name] and follows gopass references: when its password line is
+     * `gopass://other`, the password shown is `other`'s, as `gopass show`
+     * does with `core.follow-references`. The entry itself is returned
+     * unchanged, so editing it keeps the reference.
+     */
+    suspend fun openFollowing(
+        name: String,
+        passphrase: CharArray?,
+    ): Opened {
+        val entry = open(name, passphrase)
+        val chain = mutableListOf(name)
+        var target = entry
+        while (true) {
+            val next = target.reference ?: break
+            if (next in chain) throw BrokenReference("reference loop: " + (chain + next).joinToString(" → "))
+            if (chain.size > MAX_REFERENCE_HOPS) throw BrokenReference("too many references from $name")
+            if (!store.file(next).isFile) throw BrokenReference("$name refers to $next, which does not exist")
+            target = open(next, passphrase)
+            chain += next
+        }
+        return Opened(entry, target.password, chain.drop(1))
+    }
+
+    /** An entry, and the password it resolves to after following [via]. */
+    data class Opened(
+        val entry: PassEntry,
+        val password: String,
+        val via: List<String>,
+    )
+
+    /**
      * Encrypts [entry] for everyone in the governing `.gpg-id` and commits it.
      * Renaming is a save under the new name plus a delete of the old one, in
      * the same commit.
@@ -166,11 +197,19 @@ class PasswordRepository(
 
     private fun relative(name: String): String = name + PasswordStore.EXTENSION
 
+    private companion object {
+        const val MAX_REFERENCE_HOPS = 8
+    }
+
     data class SyncResult(
         val cloned: Boolean,
         val pending: Int,
     )
 }
+
+class BrokenReference(
+    message: String,
+) : Exception(message)
 
 class MissingRecipients(
     val ids: List<String>,

@@ -10,9 +10,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import me.parham1995.passwords.crypto.PgpException
+import me.parham1995.passwords.data.BrokenReference
 import me.parham1995.passwords.data.PasswordRepository
 import me.parham1995.passwords.data.SettingsStore
-import me.parham1995.passwords.store.PassEntry
 import me.parham1995.passwords.unlock.Unlocker
 import me.parham1995.passwords.unlock.UnlockingViewModel
 
@@ -34,7 +34,7 @@ class EntryViewModel
             data object Locked : State
 
             data class Shown(
-                val entry: PassEntry,
+                val opened: PasswordRepository.Opened,
             ) : State
 
             data class Failed(
@@ -60,9 +60,11 @@ class EntryViewModel
             viewModelScope.launch {
                 _state.value =
                     try {
-                        State.Shown(repository.open(name, passphrase))
+                        State.Shown(repository.openFollowing(name, passphrase))
                     } catch (e: PgpException) {
                         State.Failed(e.message ?: "Could not decrypt")
+                    } catch (e: BrokenReference) {
+                        State.Failed(e.message ?: "Broken reference")
                     } finally {
                         passphrase?.fill('\u0000')
                     }

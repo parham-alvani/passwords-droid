@@ -44,7 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import me.parham1995.passwords.store.PassEntry
+import me.parham1995.passwords.data.PasswordRepository
 import me.parham1995.passwords.store.Totp
 import me.parham1995.passwords.ui.SecretClipboard
 import me.parham1995.passwords.unlock.UnlockPrompts
@@ -55,6 +55,7 @@ fun EntryScreen(
     name: String,
     onBack: () -> Unit,
     onEdit: () -> Unit,
+    onOpen: (String) -> Unit,
     viewModel: EntryViewModel =
         hiltViewModel<EntryViewModel, EntryViewModel.Factory>(key = name) { it.create(name) },
 ) {
@@ -92,7 +93,7 @@ fun EntryScreen(
                     Text(current.message, color = MaterialTheme.colorScheme.error)
                     Button(onClick = viewModel::retry) { Text("Try again") }
                 }
-                is EntryViewModel.State.Shown -> EntryDetails(current.entry, viewModel)
+                is EntryViewModel.State.Shown -> EntryDetails(current.opened, viewModel, onOpen)
             }
         }
     }
@@ -100,22 +101,35 @@ fun EntryScreen(
 
 @Composable
 private fun EntryDetails(
-    entry: PassEntry,
+    opened: PasswordRepository.Opened,
     viewModel: EntryViewModel,
+    onOpen: (String) -> Unit,
 ) {
+    val entry = opened.entry
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val copy: (String, String) -> Unit = { label, value ->
         scope.launch { SecretClipboard.copy(context, label, value, viewModel.clipboardSeconds()) }
     }
 
-    SecretRow("Password", entry.password, secret = true, onCopy = { copy("Password", entry.password) })
+    SecretRow("Password", opened.password, secret = true, onCopy = { copy("Password", opened.password) })
+    opened.via.lastOrNull()?.let { target ->
+        TextButton(onClick = { onOpen(target) }) {
+            Text("From gopass://" + opened.via.joinToString(" → gopass://"))
+        }
+    }
     entry.username?.let { SecretRow("Username", it, secret = false, onCopy = { copy("Username", it) }) }
-    entry.otpUri?.let { uri -> Totp.parse(uri)?.let { OtpRow(it, onCopy = { code -> copy("One-time code", code) }) } }
+    entry.otp?.let { uri -> Totp.parse(uri)?.let { OtpRow(it, onCopy = { code -> copy("One-time code", code) }) } }
+    val otpField = entry.fields.firstOrNull { entry.otpUri == null && it.key.lowercase() in OTP_KEYS }
     entry.fields
-        .filterNot { it.value == entry.username }
+        .filterNot { it.value == entry.username || it == otpField }
         .forEach { field ->
-            SecretRow(field.key, field.value, field.isSecret, onCopy = { copy(field.key, field.value) })
+            val target = field.reference
+            if (target != null) {
+                ReferenceRow(field.key, target, onOpen = { onOpen(target) })
+            } else {
+                SecretRow(field.key, field.value, field.isSecret, onCopy = { copy(field.key, field.value) })
+            }
         }
     if (entry.notes.isNotBlank()) {
         ElevatedCard(Modifier.fillMaxWidth()) {
@@ -143,13 +157,37 @@ private fun SecretRow(
             Column(Modifier.weight(1f)) {
                 Text(label, style = MaterialTheme.typography.labelMedium)
                 Text(
-                    if (revealed) value else "•".repeat(MASK_LENGTH),
+                    when {
+                        revealed -> value
+                        '\n' in value -> "•".repeat(MASK_LENGTH) + " (${value.lines().size} lines)"
+                        else -> "•".repeat(MASK_LENGTH)
+                    },
                     fontFamily = FontFamily.Monospace,
                     style = MaterialTheme.typography.bodyLarge,
                 )
             }
             if (secret) TextButton(onClick = { revealed = !revealed }) { Text(if (revealed) "Hide" else "Show") }
             TextButton(onClick = onCopy) { Text("Copy") }
+        }
+    }
+}
+
+@Composable
+private fun ReferenceRow(
+    label: String,
+    target: String,
+    onOpen: () -> Unit,
+) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(label, style = MaterialTheme.typography.labelMedium)
+                Text("gopass://$target", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodyLarge)
+            }
+            TextButton(onClick = onOpen) { Text("Open") }
         }
     }
 }
@@ -195,4 +233,5 @@ private fun OtpRow(
 }
 
 private const val MASK_LENGTH = 12
+private val OTP_KEYS = setOf("totp", "otpauth")
 private const val TICK_MILLIS = 500L

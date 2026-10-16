@@ -80,6 +80,7 @@ fun PasswordsNavHost() {
                 name = route.name,
                 onBack = { nav.popBackStack() },
                 onEdit = { nav.navigate(Edit(name = route.name)) },
+                onOpen = { nav.navigate(Entry(it)) },
             )
         }
         composable<Edit> { back ->

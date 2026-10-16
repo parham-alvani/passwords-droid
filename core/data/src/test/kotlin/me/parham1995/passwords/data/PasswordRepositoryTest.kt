@@ -158,6 +158,25 @@ class PasswordRepositoryTest {
         }
 
     @Test
+    fun `gopass references are followed, and loops are refused`() =
+        runTest {
+            val repo = repository()
+            repo.sync()
+            repo.save("alias/one", PassEntry.parse("gopass://alias/two\nlogin: x\n"))
+            repo.save("alias/two", PassEntry.parse("gopass://github.com/parham\n"))
+
+            val opened = repo.openFollowing("alias/one", "pass".toCharArray())
+            assertThat(opened.password).isEqualTo("hunter2")
+            assertThat(opened.via).containsExactly("alias/two", "github.com/parham").inOrder()
+            assertThat(opened.entry.username).isEqualTo("x")
+
+            repo.save("loop/a", PassEntry.parse("gopass://loop/b\n"))
+            repo.save("loop/b", PassEntry.parse("gopass://loop/a\n"))
+            val error = runCatching { repo.openFollowing("loop/a", "pass".toCharArray()) }.exceptionOrNull()
+            assertThat(error).isInstanceOf(BrokenReference::class.java)
+        }
+
+    @Test
     fun `a wrong passphrase does not decrypt`() =
         runTest {
             val repo = repository()
