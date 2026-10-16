@@ -39,6 +39,7 @@ enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 rootProject.name = "passwords-droid"
 
 include(":app")
+include(":autofill-parser")
 include(":core:store")
 include(":core:crypto")
 include(":core:data")

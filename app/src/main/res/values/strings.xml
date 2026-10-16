@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">Passwords</string>
     <string name="credman_search">Search Passwords</string>
+    <string name="autofill_save_unsupported">This form cannot be saved</string>
 </resources>

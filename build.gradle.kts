@@ -10,5 +10,6 @@ plugins {
 }
 
 subprojects {
-    apply(plugin = "org.jlleitschuh.gradle.ktlint")
+    // autofill-parser is vendored unchanged and keeps upstream's style.
+    if (name != "autofill-parser") apply(plugin = "org.jlleitschuh.gradle.ktlint")
 }

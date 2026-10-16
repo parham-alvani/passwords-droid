@@ -17,6 +17,7 @@ import me.parham1995.passwords.store.CredentialMatcher
 import me.parham1995.passwords.store.PassEntry
 import me.parham1995.passwords.store.PasswordStore
 import me.parham1995.passwords.store.Search
+import me.parham1995.passwords.store.Totp
 import me.parham1995.passwords.unlock.Unlocker
 import me.parham1995.passwords.unlock.UnlockingViewModel
 import javax.inject.Inject
@@ -33,6 +34,8 @@ class CredentialViewModel
             data class Filled(
                 val username: String,
                 val password: String,
+                /** The current one-time code, for forms that ask for it too. */
+                val otp: String? = null,
             ) : Outcome
 
             data object Saved : Outcome
@@ -86,7 +89,11 @@ class CredentialViewModel
                         val item = PasswordStore.Item(name, repository.store.file(name))
                         // The login the entry records, else the account its file is named after.
                         val username = opened.entry.username ?: CredentialMatcher.usernameOf(item)
-                        Outcome.Filled(username, opened.password)
+                        val otp =
+                            opened.entry.otp
+                                ?.let(Totp::parse)
+                                ?.code(System.currentTimeMillis())
+                        Outcome.Filled(username, opened.password, otp)
                     } catch (e: PgpException) {
                         Outcome.Failed(e.message ?: "Could not decrypt")
                     } catch (e: BrokenReference) {

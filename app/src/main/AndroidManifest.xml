@@ -35,6 +35,30 @@
             android:exported="false"
             android:theme="@style/Theme.Passwords.Translucent" />
 
+        <activity
+            android:name=".autofill.AutofillActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:theme="@style/Theme.Passwords.Translucent" />
+
+        <!--
+            Classic autofill, for Chrome's "Autofill using another service" and
+            apps that do not use Credential Manager. Picking this app as the
+            preferred service selects this and the provider below together.
+        -->
+        <service
+            android:name=".autofill.PasswordsAutofillService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_AUTOFILL_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.autofill.AutofillService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.autofill"
+                android:resource="@xml/autofill_service" />
+        </service>
+
         <service
             android:name=".credman.PasswordsCredentialService"
             android:exported="true"
