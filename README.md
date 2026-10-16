@@ -13,10 +13,13 @@ It is written for one modern phone rather than every phone: Android 14 and newer
 
 ## Status
 
-Early. The first milestone is the core loop: set up, sync, search, open, copy, edit, add, rename and delete, with fingerprint unlock. Autofill and passkeys come next (see [Roadmap](#roadmap)).
+Early, and used daily on one phone. Set up, sync, browse, search, open, copy, edit, add, rename and delete work, with fingerprint unlock, and passwords fill into apps and Chrome. Passkeys come next (see [Roadmap](#roadmap)).
 
 ## Features
 
+- **Autofill everywhere** — a classic autofill service for Chrome and apps, and a Credential Manager provider for Android's own sign-in sheet; suggestions appear in the keyboard, each stays locked until a fingerprint opens just that entry, and a login typed into a form can be saved as a new entry
+- **Matching by name, nothing decrypted** — a site matches the folder named after its domain (`work/github.com/me` fills on `github.com` and its subdomains), an app through its package read as a reversed domain; lookalikes such as `evilgithub.com` match nothing, and a browser is only believed about the page when it is a known, correctly signed browser
+- **Folders and icons** — browse the store as folders; top-level folders carry Lucide icons kept in `.icons.json`, which gopass ignores
 - **Compatible with `pass` and gopass** — the first line is the password; `key: value` lines, gopass's YAML body and `otpauth://` URIs are understood; files are written back in the same shape they were read in
 - **Every recipient, every time** — an entry is encrypted for everyone in the nearest `.gpg-id`, using imported keys and gopass's exported `.public-keys`; a save that would leave a recipient out is refused instead
 - **Git over SSH** — the deploy key is generated on the phone and never leaves it; GitHub's host keys are pinned; pulls rebase, so history stays a straight line; an edit made offline is committed and pushed with the next sync
@@ -42,11 +45,12 @@ Early. The first milestone is the core loop: set up, sync, search, open, copy, e
 2. Install the app, import `key.sec.asc` and enter the code.
 3. Enter the store's Git URL (for example `git@github.com:you/passwords.git`), generate the SSH key, and add it to the repository as a deploy key with **Allow write access** ticked.
 4. Clone.
+5. In **Settings → Passwords, passkeys and autofill**, choose Passwords as the preferred service. For Chrome, also turn on **Chrome → Settings → Autofill services → Autofill using another service**; without it Chrome fills from its own password manager only.
 
 ## Roadmap
 
-- [ ] Credential Manager provider: passwords and passkeys in Android's own sign-in sheet
-- [ ] Autofill service for apps and browsers that do not use Credential Manager
+- [x] Credential Manager provider for passwords
+- [x] Autofill service for Chrome and apps
 - [ ] Passkeys stored in the store, compatible with [Password Store's format](https://github.com/agrahn/Android-Password-Store/blob/main/PasskeyStorage.md)
 - [ ] Quick Settings tile and home-screen widget for one-time codes
 - [ ] Diceware passphrases
@@ -66,7 +70,7 @@ The debug build is `me.parham1995.passwords.debug` and installs next to a releas
 
 ## Acknowledgements
 
-The design owes a lot to [Password Store](https://github.com/agrahn/Android-Password-Store) (GPL-3.0), whose `pass` compatibility, Keystore passphrase caching and passkey format were the reference for this one.
+The design owes a lot to [Password Store](https://github.com/agrahn/Android-Password-Store) (GPL-3.0), whose `pass` compatibility, Keystore passphrase caching and passkey format were the reference for this one. Its `autofill-parser` is vendored unchanged in [`autofill-parser/`](autofill-parser/) (LGPL-3.0 with linking exception), and the privileged-browser lists come from Google and the Bitwarden community via Password Store.
 
 ## License
 

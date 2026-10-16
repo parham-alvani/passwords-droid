@@ -25,7 +25,8 @@ just verify-apk
 core/store/    kotlin("jvm")     pass file format, .gpg-id, TOTP, search, generator -- NO Android
 core/crypto/   kotlin("jvm")     PGPainless: encrypt, decrypt, key reading, .gpg-id matching -- NO Android
 core/data/     android-library   git (JGit + sshd), Keystore sealing, key ring, settings, repository
-app/           application       Compose UI, unlock flow, DI wiring
+autofill-parser/ android-library Password Store's form parser, VENDORED UNCHANGED -- do not edit, copy upstream over it
+app/           application       Compose UI, unlock flow, autofill + Credential Manager, DI wiring
 ```
 
 Keep Android out of the two JVM modules. Their tests run in seconds, and anything that touches the store format or the cryptography belongs there.
@@ -39,6 +40,12 @@ Keep Android out of the two JVM modules. Their tests run in seconds, and anythin
 - **Secrets as `CharArray`, wiped after use.** Do not turn a passphrase into a `String` outside the UI text field.
 - **The biometric key is TEE, not StrongBox.** Per-use biometric keys in StrongBox are where the firmware bugs Password Store hit live (its issue #206). The at-rest key tries StrongBox and self-tests it.
 - **No test touches a real store.** `.gitignore` refuses `*.gpg` and `*.asc` outside test resources; tests generate their own keys with PGPainless.
+
+## Autofill: two services, on purpose
+
+`autofill/PasswordsAutofillService` (classic autofill) and `credman/PasswordsCredentialService` (Credential Manager) both ship. Chrome's "Autofill using another service" refuses the platform's credential autofill bridge (`AutofillManager isn't available` in its log), so a Credential Manager provider alone fills nothing in the browser. Do not remove the classic service on the theory that the bridge covers it. Both match entries with `CredentialMatcher` from names only, and both unlock through the shared `CredentialViewModel`.
+
+The suggestion icon is `ic_autofill_key`, a plain vector: an adaptive launcher icon draws as a blank square in the keyboard's inline chips.
 
 ## Tests
 
