@@ -1,20 +1,28 @@
 package me.parham1995.passwords.data
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import me.parham1995.passwords.crypto.PgpCrypto
 import me.parham1995.passwords.data.git.StoreGit
+import me.parham1995.passwords.store.Documents
 import me.parham1995.passwords.store.PassEntry
+import me.parham1995.passwords.store.PasswordHealth
 import me.parham1995.passwords.store.PasswordStore
+import me.parham1995.passwords.store.Pwned
 import me.parham1995.passwords.store.StoreIcons
 import org.bouncycastle.openpgp.api.OpenPGPCertificate
 import org.bouncycastle.openpgp.api.OpenPGPKey
 import org.eclipse.jgit.lib.PersonIdent
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The store as the app sees it: entries to list, open, save and delete, and a
@@ -144,6 +152,7 @@ class PasswordRepository(
         name: String,
         entry: PassEntry,
         previousName: String? = null,
+        message: String? = null,
     ) = lock.withLock {
         val recipients = recipientsFor(name)
         val ciphertext = withContext(Dispatchers.Default) { crypto.encrypt(entry.format().toByteArray(), recipients) }
@@ -157,14 +166,14 @@ class PasswordRepository(
             target.writeBytes(ciphertext)
             val renamed = previousReal != null && previousReal != real
             if (renamed) store.file(previousReal).delete()
-            val message =
-                when {
+            val commitMessage =
+                message ?: when {
                     renamed -> "Rename $previousName to $name."
                     previousName == null -> "Add given password for $name to store."
                     else -> "Edit password for $name using passwords-droid."
                 }
             val paths = listOfNotNull(relative(real), previousReal?.takeIf { renamed }?.let(::relative))
-            commitAndPush(message, paths)
+            commitAndPush(commitMessage, paths)
         }
         refresh()
     }
@@ -180,6 +189,105 @@ class PasswordRepository(
             }
             refresh()
         }
+
+    /**
+     * Every login's password, for the health check: decrypted a few at a time
+     * off the main thread, with documents and gopass references left out
+     * because they are not passwords to score. [onProgress] reports how many
+     * of how many are done. The caller must not keep the result.
+     */
+    suspend fun healthCandidates(
+        passphrase: CharArray?,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): List<PasswordHealth.Candidate> =
+        withContext(Dispatchers.Default) {
+            val names = items.value.filter { it.aliasOf == null }.map { it.name }
+            val changed = runCatching { git().lastChanged() }.getOrDefault(emptyMap())
+            val done = AtomicInteger()
+            val gate = Semaphore(DECRYPT_PARALLELISM)
+            names
+                .map { name ->
+                    async {
+                        gate.withPermit {
+                            val result =
+                                runCatching {
+                                    val bytes = withContext(Dispatchers.IO) { store.file(name).readBytes() }
+                                    val plain = crypto.decrypt(bytes, keyRing.secretKeys(), passphrase)
+                                    val text = String(plain, Charsets.UTF_8).also { plain.fill(0) }
+                                    val entry = PassEntry.parse(text)
+                                    if (Documents.of(name, text) != null || entry.reference != null) {
+                                        null
+                                    } else {
+                                        PasswordHealth.Candidate(name, entry.password, changed[relative(name)])
+                                    }
+                                }.getOrNull()
+                            onProgress(done.incrementAndGet(), names.size)
+                            result
+                        }
+                    }
+                }.awaitAll()
+                .filterNotNull()
+        }
+
+    /**
+     * How many breaches each password appears in, by entry name, from Have I
+     * Been Pwned's range API: one request per distinct five-character hash
+     * prefix, and only the prefix leaves the phone.
+     */
+    suspend fun pwned(
+        candidates: List<PasswordHealth.Candidate>,
+        client: PwnedClient = PwnedClient.HIBP,
+    ): Map<String, Int> =
+        withContext(Dispatchers.IO) {
+            val hashes = candidates.associate { it.name to Pwned.sha1(it.password) }
+            val ranges =
+                hashes.values
+                    .map { it.take(Pwned.PREFIX_LENGTH) }
+                    .distinct()
+                    .associateWith { prefix -> client.range(prefix) }
+            hashes
+                .mapValues { (_, hash) -> Pwned.count(hash, ranges.getValue(hash.take(Pwned.PREFIX_LENGTH))) }
+                .filterValues { it > 0 }
+        }
+
+    /** The commits that changed [name], newest first. */
+    suspend fun history(name: String): List<StoreGit.Revision> = git().history(relative(store.realName(name)))
+
+    /** [name] as it was at [commit], decrypted; null when it did not exist there. */
+    suspend fun openAt(
+        name: String,
+        commit: String,
+        passphrase: CharArray?,
+    ): PassEntry? {
+        val bytes = git().contentAt(commit, relative(store.realName(name))) ?: return null
+        return withContext(Dispatchers.Default) {
+            val plain = crypto.decrypt(bytes, keyRing.secretKeys(), passphrase)
+            try {
+                PassEntry.parse(String(plain, Charsets.UTF_8))
+            } finally {
+                plain.fill(0)
+            }
+        }
+    }
+
+    /**
+     * Puts [name] back the way it was at [revision], as a new commit on top --
+     * history is never rewritten, so the restore itself can be undone.
+     * Re-encrypted for today's recipients, not the ones it had then.
+     */
+    suspend fun restore(
+        name: String,
+        revision: StoreGit.Revision,
+        passphrase: CharArray?,
+    ) {
+        val entry = openAt(name, revision.commit, passphrase) ?: error("$name did not exist in that version")
+        val date =
+            java.time.Instant
+                .ofEpochMilli(revision.time)
+                .atZone(java.time.ZoneId.systemDefault())
+                .toLocalDate()
+        save(name, entry, previousName = name, message = "Restore $name to its version of $date.")
+    }
 
     /** Pull, then send anything waiting. */
     suspend fun sync(): SyncResult =
@@ -239,6 +347,7 @@ class PasswordRepository(
 
     private companion object {
         const val MAX_REFERENCE_HOPS = 8
+        const val DECRYPT_PARALLELISM = 4
     }
 
     data class SyncResult(

@@ -7,7 +7,9 @@ import me.parham1995.passwords.crypto.WrongPassphrase
 import me.parham1995.passwords.data.git.StoreGit
 import me.parham1995.passwords.data.security.SecretBox
 import me.parham1995.passwords.store.PassEntry
+import me.parham1995.passwords.store.PasswordHealth
 import me.parham1995.passwords.store.PasswordStore
+import me.parham1995.passwords.store.Pwned
 import me.parham1995.passwords.store.StoreIcons
 import org.eclipse.jgit.api.Git
 import org.junit.After
@@ -245,6 +247,99 @@ class PasswordRepositoryTest {
 
             repo.setFolderIcon("github.com", null)
             assertThat(repo.icons.value.folder("github.com")).isNull()
+        }
+
+    @Test
+    fun `history lists an entry's versions and restore puts an old one back as a new commit`() =
+        runTest {
+            val repo = repository()
+            repo.sync()
+            repo.save(
+                "github.com/parham",
+                PassEntry.parse("second\nlogin: parham\n"),
+                previousName = "github.com/parham",
+            )
+            repo.save(
+                "github.com/parham",
+                PassEntry.parse("third\nlogin: parham\n"),
+                previousName = "github.com/parham",
+            )
+
+            val history = repo.history("github.com/parham")
+            assertThat(history.map { it.message })
+                .containsExactly(
+                    "Edit password for github.com/parham using passwords-droid.",
+                    "Edit password for github.com/parham using passwords-droid.",
+                    "seed",
+                ).inOrder()
+            assertThat(
+                repo.openAt("github.com/parham", history.last().commit, "pass".toCharArray())?.password,
+            ).isEqualTo("hunter2")
+
+            repo.restore("github.com/parham", history.last(), "pass".toCharArray())
+            assertThat(repo.open("github.com/parham", "pass".toCharArray()).password).isEqualTo("hunter2")
+            Git.open(origin).use { git ->
+                assertThat(
+                    git
+                        .log()
+                        .setMaxCount(1)
+                        .call()
+                        .first()
+                        .fullMessage,
+                ).startsWith("Restore github.com/parham to its version of ")
+                // Nothing was rewritten: all four versions are still there.
+                assertThat(
+                    git
+                        .log()
+                        .addPath("github.com/parham.gpg")
+                        .call()
+                        .count(),
+                ).isEqualTo(4)
+            }
+        }
+
+    @Test
+    fun `health sees logins with their age, and skips documents and references`() =
+        runTest {
+            val repo = repository()
+            repo.sync()
+            repo.save(
+                "certs/vso.pem",
+                PassEntry.parse("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"),
+            )
+            repo.save("alias/gh", PassEntry.parse("gopass://github.com/parham\n"))
+            repo.save("shop/a", PassEntry.parse("hunter2\n"))
+
+            val candidates = repo.healthCandidates("pass".toCharArray())
+            assertThat(candidates.map { it.name }).containsExactly("github.com/parham", "shop/a")
+            assertThat(candidates.all { it.lastChanged != null }).isTrue()
+
+            val report = PasswordHealth.analyze(candidates, System.currentTimeMillis())
+            assertThat(report.reused).containsExactly(listOf("github.com/parham", "shop/a"))
+        }
+
+    @Test
+    fun `the breach check sends only hash prefixes`() =
+        runTest {
+            val asked = mutableListOf<String>()
+            val hash = Pwned.sha1("hunter2")
+            val client =
+                PwnedClient { prefix ->
+                    asked += prefix
+                    if (prefix == hash.take(5)) hash.drop(5) + ":42\nAAAA:1\n" else "BBBB:1\n"
+                }
+            val repo = repository()
+            val counts =
+                repo.pwned(
+                    listOf(
+                        PasswordHealth.Candidate("a", "hunter2", null),
+                        PasswordHealth.Candidate("b", "something-else-entirely", null),
+                    ),
+                    client,
+                )
+            assertThat(counts).containsExactly("a", 42)
+            assertThat(asked.all { it.length == 5 }).isTrue()
+            assertThat(asked).doesNotContain("hunter2")
         }
 
     @Test

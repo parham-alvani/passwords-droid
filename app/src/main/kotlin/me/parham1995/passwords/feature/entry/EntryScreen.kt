@@ -57,6 +57,7 @@ fun EntryScreen(
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onOpen: (String) -> Unit,
+    onHistory: () -> Unit,
     viewModel: EntryViewModel =
         hiltViewModel<EntryViewModel, EntryViewModel.Factory>(key = name) { it.create(name) },
 ) {
@@ -71,6 +72,7 @@ fun EntryScreen(
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
+                    TextButton(onClick = onHistory) { Text("History") }
                     if (state is EntryViewModel.State.Shown) {
                         IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "Edit") }
                     }

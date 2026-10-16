@@ -19,6 +19,8 @@ import kotlinx.serialization.Serializable
 import me.parham1995.passwords.data.SettingsStore
 import me.parham1995.passwords.feature.edit.EditScreen
 import me.parham1995.passwords.feature.entry.EntryScreen
+import me.parham1995.passwords.feature.health.HealthScreen
+import me.parham1995.passwords.feature.history.HistoryScreen
 import me.parham1995.passwords.feature.list.ListScreen
 import me.parham1995.passwords.feature.settings.SettingsScreen
 import me.parham1995.passwords.feature.setup.SetupScreen
@@ -44,6 +46,14 @@ data class Edit(
 
 @Serializable
 object Preferences
+
+@Serializable
+object Health
+
+@Serializable
+data class History(
+    val name: String,
+)
 
 @HiltViewModel
 class StartViewModel
@@ -86,6 +96,7 @@ fun PasswordsNavHost() {
                 onBack = { nav.popBackStack() },
                 onEdit = { nav.navigate(Edit(name = route.name)) },
                 onOpen = { nav.navigate(Entry(it)) },
+                onHistory = { nav.navigate(History(route.name)) },
             )
         }
         composable<Edit> { back ->
@@ -100,9 +111,16 @@ fun PasswordsNavHost() {
                 onDeleted = { nav.popBackStack(Entries, inclusive = false) },
             )
         }
+        composable<Health> {
+            HealthScreen(onBack = { nav.popBackStack() }, onOpen = { nav.navigate(Entry(it)) })
+        }
+        composable<History> { back ->
+            HistoryScreen(name = back.toRoute<History>().name, onBack = { nav.popBackStack() })
+        }
         composable<Preferences> {
             SettingsScreen(
                 onBack = { nav.popBackStack() },
+                onHealth = { nav.navigate(Health) },
                 onReset = { nav.navigate(Setup) { popUpTo(0) } },
             )
         }

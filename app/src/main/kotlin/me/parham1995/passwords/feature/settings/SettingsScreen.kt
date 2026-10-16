@@ -50,6 +50,7 @@ import me.parham1995.passwords.feature.keys.BackupCodeDialog
 fun SettingsScreen(
     onBack: () -> Unit,
     onReset: () -> Unit,
+    onHealth: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val settings by viewModel.settings.collectAsState()
@@ -119,6 +120,11 @@ fun SettingsScreen(
                     valueRange = MIN_CLIPBOARD..MAX_CLIPBOARD,
                 )
                 OutlinedButton(onClick = viewModel::forgetPassphrases) { Text("Forget all passphrases now") }
+            }
+
+            Section("Password health") {
+                Text("Find weak, reused, old and breached passwords.")
+                OutlinedButton(onClick = onHealth) { Text("Check passwords") }
             }
 
             Section("OpenPGP keys") {

@@ -5,12 +5,17 @@ import kotlinx.coroutines.withContext
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.TransportConfigCallback
 import org.eclipse.jgit.lib.Constants
+import org.eclipse.jgit.lib.ObjectId
 import org.eclipse.jgit.lib.PersonIdent
+import org.eclipse.jgit.revwalk.RevWalk
 import org.eclipse.jgit.transport.RemoteRefUpdate
 import org.eclipse.jgit.transport.SshSessionFactory
 import org.eclipse.jgit.transport.SshTransport
 import org.eclipse.jgit.transport.sshd.ServerKeyDatabase
 import org.eclipse.jgit.transport.sshd.SshdSessionFactoryBuilder
+import org.eclipse.jgit.treewalk.EmptyTreeIterator
+import org.eclipse.jgit.treewalk.TreeWalk
+import org.eclipse.jgit.treewalk.filter.TreeFilter
 import java.io.File
 
 /**
@@ -163,11 +168,96 @@ class StoreGit(
             }
         }
 
+    /** One commit that changed an entry. */
+    data class Revision(
+        val commit: String,
+        val time: Long,
+        val author: String,
+        val message: String,
+    )
+
+    /**
+     * When each `.gpg` file last changed, by path, from one walk of history
+     * newest first: a path's first appearance is its latest change. The walk
+     * stops once every current file has been seen, so a store with years of
+     * history and few stale entries is cheap.
+     */
+    suspend fun lastChanged(): Map<String, Long> =
+        withContext(Dispatchers.IO) {
+            open().use { git ->
+                val repo = git.repository
+                val head = repo.resolve(Constants.HEAD) ?: return@withContext emptyMap()
+                val wanted = mutableSetOf<String>()
+                TreeWalk(repo).use { walk ->
+                    walk.addTree(RevWalk(repo).use { it.parseCommit(head).tree })
+                    walk.isRecursive = true
+                    while (walk.next()) if (walk.pathString.endsWith(GPG)) wanted += walk.pathString
+                }
+                val found = HashMap<String, Long>(wanted.size)
+                RevWalk(repo).use { revWalk ->
+                    revWalk.markStart(revWalk.parseCommit(head))
+                    for (commit in revWalk) {
+                        val time = commit.commitTime * MILLIS
+                        TreeWalk(repo).use { walk ->
+                            walk.isRecursive = true
+                            walk.filter = TreeFilter.ANY_DIFF
+                            if (commit.parentCount >
+                                0
+                            ) {
+                                walk.addTree(revWalk.parseCommit(commit.getParent(0)).tree)
+                            } else {
+                                walk.addTree(EmptyTreeIterator())
+                            }
+                            walk.addTree(commit.tree)
+                            while (walk.next()) {
+                                val path = walk.pathString
+                                if (path in wanted && path !in found) found[path] = time
+                            }
+                        }
+                        if (found.size == wanted.size) break
+                    }
+                }
+                found
+            }
+        }
+
+    /** The commits that changed [path], newest first. */
+    suspend fun history(
+        path: String,
+        limit: Int = HISTORY_LIMIT,
+    ): List<Revision> =
+        withContext(Dispatchers.IO) {
+            open().use { git ->
+                git
+                    .log()
+                    .addPath(path)
+                    .setMaxCount(limit)
+                    .call()
+                    .map { Revision(it.name, it.commitTime * MILLIS, it.authorIdent.name, it.shortMessage) }
+            }
+        }
+
+    /** The bytes [path] had at [commit], or null when it did not exist there. */
+    suspend fun contentAt(
+        commit: String,
+        path: String,
+    ): ByteArray? =
+        withContext(Dispatchers.IO) {
+            open().use { git ->
+                val repo = git.repository
+                val tree = RevWalk(repo).use { it.parseCommit(ObjectId.fromString(commit)).tree }
+                TreeWalk.forPath(repo, path, tree)?.use { walk -> repo.open(walk.getObjectId(0)).bytes }
+            }
+        }
+
     private fun open(): Git = Git.open(workTree)
 
     private companion object {
         const val TIMEOUT_SECONDS = 120
         const val PUSH_ATTEMPTS = 2
+        const val HISTORY_LIMIT = 100
+        const val MILLIS = 1000L
+        const val GPG = ".gpg"
     }
 }
 
