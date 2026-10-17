@@ -39,6 +39,8 @@ class RecipientsViewModel
             val entries: Int = 0,
             val progress: Pair<Int, Int>? = null,
             val message: String? = null,
+            /** An entry [governedBy] decides, to unlock with; null when it has none. */
+            val unlockWith: String? = null,
         ) {
             val changed: Boolean get() = selected != current && selected.isNotEmpty()
         }
@@ -51,6 +53,10 @@ class RecipientsViewModel
         }
 
         fun load(folder: String) {
+            viewModelScope.launch { reload(folder) }
+        }
+
+        private suspend fun reload(folder: String) {
             val dir = folder.trim().trim('/')
             val (governedBy, ids) = repository.recipients(dir)
             val certs = repository.knownCertificates()
@@ -59,23 +65,12 @@ class RecipientsViewModel
                     val cert = certs.firstOrNull { PgpCrypto.matches(it, id) }
                     Candidate(id, cert?.label() ?: "Unknown key", cert?.fingerprintHex(), cert?.isSecretKey == true)
                 }
+            // New recipients are written as full fingerprints, as gopass does.
             val others =
                 certs
                     .filter { cert -> ids.none { PgpCrypto.matches(cert, it) } }
-                    .map {
-                        Candidate(
-                            "0x" + it.fingerprintHex().takeLast(LONG_ID),
-                            it.label(),
-                            it.fingerprintHex(),
-                            it.isSecretKey,
-                        )
-                    }
-            val entries =
-                repository.items.value.count { item ->
-                    item.aliasOf == null &&
-                        (governedBy.isEmpty() || item.name.startsWith("$governedBy/")) &&
-                        repository.recipients(item.folder).first == governedBy
-                }
+                    .map { Candidate(it.fingerprintHex(), it.label(), it.fingerprintHex(), it.isSecretKey) }
+            val entries = repository.governedEntries(governedBy)
             _state.value =
                 State(
                     folder = dir,
@@ -83,7 +78,8 @@ class RecipientsViewModel
                     candidates = listed + others,
                     selected = ids.toSet(),
                     current = ids.toSet(),
-                    entries = entries,
+                    entries = entries.size,
+                    unlockWith = entries.firstOrNull(),
                 )
         }
 
@@ -93,9 +89,12 @@ class RecipientsViewModel
         }
 
         fun apply() {
-            val any = repository.items.value.firstOrNull { it.aliasOf == null } ?: return
-            _state.value = _state.value.copy(progress = 0 to _state.value.entries)
-            unlock(any.name)
+            val s = _state.value
+            _state.value = s.copy(progress = 0 to s.entries)
+            // Unlock with an entry this folder governs: that is what will be
+            // decrypted. A folder with no entries has nothing to decrypt.
+            val entry = s.unlockWith
+            if (entry == null) onUnlocked(null) else unlock(entry)
         }
 
         override fun onUnlocked(passphrase: CharArray?) {
@@ -108,7 +107,7 @@ class RecipientsViewModel
                         _state.value =
                             _state.value.copy(progress = done to total)
                     }
-                    load(s.folder)
+                    reload(s.folder)
                     _state.value = _state.value.copy(message = "Re-encrypted ${s.entries} entries and pushed.")
                 } catch (e: Exception) {
                     _state.value = _state.value.copy(progress = null, message = e.message ?: "Could not re-encrypt")
@@ -120,9 +119,5 @@ class RecipientsViewModel
 
         override fun onUnlockFailed(message: String) {
             _state.value = _state.value.copy(progress = null, message = if (message == "Locked") null else message)
-        }
-
-        private companion object {
-            const val LONG_ID = 16
         }
     }

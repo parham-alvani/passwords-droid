@@ -14,6 +14,9 @@ import org.pgpainless.key.protection.SecretKeyRingProtector
 import org.pgpainless.util.Passphrase
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Date
 
 /**
  * OpenPGP for a password store, on PGPainless.
@@ -114,32 +117,124 @@ class PgpCrypto {
     companion object {
         /**
          * Whether [id] -- a line of a `.gpg-id` -- names [certificate]. gopass
-         * writes `0x`-prefixed long key ids; `pass` accepts fingerprints,
-         * short or long ids of the primary key or any subkey, and email
-         * addresses. All of them are recognised.
+         * writes full fingerprints (older versions `0x`-prefixed long key
+         * ids); `pass` accepts fingerprints, short or long ids of the primary
+         * key or any subkey, and email addresses. All of them are recognised,
+         * the way gpg reads them:
+         *
+         * - `<alice@example.com>` and a bare `alice@example.com` match a user
+         *   id whose email is exactly that, never `malice@example.com`;
+         * - `@example.com` matches part of an email;
+         * - hex, with or without `0x`, spaces or gpg's trailing `!`, is a
+         *   fingerprint or key id;
+         * - anything else is part of a user id.
          */
         fun matches(
             certificate: OpenPGPCertificate,
             id: String,
         ): Boolean {
-            val wanted =
-                id
-                    .trim()
-                    .removePrefix("0x")
-                    .removePrefix("0X")
-                    .uppercase()
-            if (wanted.isEmpty()) return false
-            if ('@' in id || ' ' in id) {
-                val needle = id.trim().removeSurrounding("<", ">").lowercase()
-                return certificate.primaryKey.userIDs.any { needle in it.userId.lowercase() }
+            val trimmed = id.substringBefore('#').trim()
+            if (trimmed.isEmpty()) return false
+            val hex = canonicalHex(trimmed)
+            if (hex != null) {
+                return certificate.keys.any { key ->
+                    val fingerprint = Hex.of(key.pgpPublicKey.fingerprint)
+                    fingerprint == hex || fingerprint.endsWith(hex)
+                }
             }
-            return certificate.keys.any { key ->
-                val fingerprint = Hex.of(key.pgpPublicKey.fingerprint)
-                fingerprint == wanted || fingerprint.endsWith(wanted) && wanted.length >= SHORT_ID_LENGTH
+            val userIds = certificate.primaryKey.userIDs.map { it.userId }
+            return when {
+                trimmed.startsWith('<') && trimmed.endsWith('>') -> {
+                    val wanted = trimmed.removeSurrounding("<", ">").trim().lowercase()
+                    userIds.any { email(it) == wanted }
+                }
+                trimmed.startsWith('@') -> {
+                    val wanted = trimmed.lowercase()
+                    userIds.any { uid -> email(uid)?.contains(wanted) == true }
+                }
+                '@' in trimmed && ' ' !in trimmed -> userIds.any { email(it) == trimmed.lowercase() }
+                else -> userIds.any { trimmed.lowercase() in it.lowercase() }
             }
         }
 
+        /**
+         * [id] as upper-case hex without `0x`, spaces or a trailing `!`, or
+         * null when it is not a fingerprint or key id at all.
+         */
+        fun canonicalHex(id: String): String? {
+            val stripped =
+                id
+                    .trim()
+                    .trimEnd('!', ' ')
+                    .replace(" ", "")
+                    .removePrefix("0x")
+                    .removePrefix("0X")
+                    .uppercase()
+            return stripped.takeIf { it.length >= SHORT_ID_LENGTH && it.all { c -> c in HEX_DIGITS } }
+        }
+
+        /** The full fingerprint, upper-case hex, the way gopass writes new `.gpg-id` lines. */
+        fun fingerprint(certificate: OpenPGPCertificate): String =
+            Hex.of(certificate.primaryKey.pgpPublicKey.fingerprint)
+
+        /**
+         * Which of [candidates] to encrypt for [id]. A match that is revoked,
+         * expired or has no encryption subkey is passed over for one that is
+         * usable; when every match is unusable the answer says why, so the
+         * caller can name the key instead of failing inside PGPainless.
+         */
+        fun resolve(
+            candidates: List<OpenPGPCertificate>,
+            id: String,
+            now: Date = Date(),
+        ): Recipient {
+            val matching = candidates.filter { matches(it, id) }
+            if (matching.isEmpty()) return Recipient.Missing
+            matching.firstOrNull { usable(it, now) }?.let { return Recipient.Found(it) }
+            val first = matching.first()
+            return Recipient.Unusable(first, whyUnusable(first, now))
+        }
+
+        private fun usable(
+            certificate: OpenPGPCertificate,
+            now: Date,
+        ): Boolean = runCatching { certificate.getEncryptionKeys(now).isNotEmpty() }.getOrDefault(false)
+
+        private fun whyUnusable(
+            certificate: OpenPGPCertificate,
+            now: Date,
+        ): String {
+            val revoked = runCatching { certificate.getRevocation(now) != null }.getOrDefault(false)
+            if (revoked) return "revoked"
+            val expires = runCatching { certificate.getExpirationTime(now) }.getOrNull()
+            if (expires != null && !expires.after(now)) return "expired on " + DATE.format(expires.toInstant())
+            return "has no valid encryption subkey"
+        }
+
+        private fun email(userId: String): String? {
+            val bracketed = EMAIL_IN_BRACKETS.find(userId)?.groupValues?.get(1)
+            val raw = bracketed ?: userId.trim().takeIf { '@' in it && ' ' !in it }
+            return raw?.trim()?.lowercase()
+        }
+
         private const val SHORT_ID_LENGTH = 8
+        private const val HEX_DIGITS = "0123456789ABCDEF"
+        private val EMAIL_IN_BRACKETS = Regex("<([^>]*)>")
+        private val DATE: DateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC)
+    }
+
+    /** The outcome of [resolve]. */
+    sealed interface Recipient {
+        data class Found(
+            val certificate: OpenPGPCertificate,
+        ) : Recipient
+
+        data class Unusable(
+            val certificate: OpenPGPCertificate,
+            val reason: String,
+        ) : Recipient
+
+        data object Missing : Recipient
     }
 }
 

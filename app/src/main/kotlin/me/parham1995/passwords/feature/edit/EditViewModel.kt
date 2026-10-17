@@ -200,7 +200,8 @@ class EditViewModel
                         repository.saveText(
                             name,
                             Templates.render(template, name, form.password),
-                            "Add given password for $name to store.",
+                            me.parham1995.passwords.data.CommitMessages
+                                .insert(name),
                         )
                     } else {
                         repository.save(name, entry, previousName = original)

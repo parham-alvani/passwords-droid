@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.parham1995.passwords.data.CommitMessages
 import me.parham1995.passwords.data.MissingRecipients
 import me.parham1995.passwords.data.PasswordRepository
 import me.parham1995.passwords.store.Documents
@@ -127,7 +128,13 @@ class ListViewModel
                     ?.takeIf { '\u0000' !in it }
             val content = text ?: Documents.attachment(fileName, bytes)
             val saved =
-                runCatching { repository.saveText(name.trim('/'), content, "Add file $fileName as ${name.trim('/')}.") }
+                runCatching {
+                    repository.saveText(
+                        name.trim('/'),
+                        content,
+                        CommitMessages.file(name.trim('/'), fileName),
+                    )
+                }
             _message.value =
                 saved.exceptionOrNull()?.let { e ->
                     when (e) {

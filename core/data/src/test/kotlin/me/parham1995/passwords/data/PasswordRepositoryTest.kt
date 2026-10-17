@@ -5,6 +5,7 @@ import kotlinx.coroutines.test.runTest
 import me.parham1995.passwords.crypto.PgpCrypto
 import me.parham1995.passwords.crypto.WrongPassphrase
 import me.parham1995.passwords.data.git.StoreGit
+import me.parham1995.passwords.data.git.SyncConflict
 import me.parham1995.passwords.data.security.SecretBox
 import me.parham1995.passwords.store.Documents
 import me.parham1995.passwords.store.PassEntry
@@ -12,7 +13,9 @@ import me.parham1995.passwords.store.PasswordHealth
 import me.parham1995.passwords.store.PasswordStore
 import me.parham1995.passwords.store.Pwned
 import me.parham1995.passwords.store.StoreIcons
+import org.bouncycastle.openpgp.api.OpenPGPCertificate
 import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.api.ResetCommand.ResetType
 import org.junit.After
 import org.junit.Assert.assertThrows
 import org.junit.Before
@@ -78,17 +81,55 @@ class PasswordRepositoryTest {
         root.deleteRecursively()
     }
 
-    private fun repository(): PasswordRepository {
+    private fun repository(
+        scheduler: SyncScheduler = SyncScheduler.NONE,
+        extra: List<OpenPGPCertificate> = emptyList(),
+    ): PasswordRepository {
         val ring =
             KeyRing(
                 File(root, "keyring"),
                 clearBox,
                 crypto,
-            ).apply { import(me.toAsciiArmoredString().toByteArray()) }
+            ).apply {
+                import(me.toAsciiArmoredString().toByteArray())
+                extra.forEach { import(it.toAsciiArmoredString().toByteArray()) }
+            }
         val git = StoreGit(workTree, origin.toURI().toString(), "main", keys = null, configDir = File(root, "config"))
-        return PasswordRepository(PasswordStore(workTree), ring, crypto, {
+        return PasswordRepository(
+            PasswordStore(workTree),
+            ring,
+            crypto,
+            { git },
+            { Settings(authorName = "Phone", authorEmail = "p@x") },
+            scheduler,
+        )
+    }
+
+    private fun originMessages(count: Int): List<String> =
+        Git.open(origin).use { git ->
             git
-        }, { Settings(authorName = "Phone", authorEmail = "p@x") })
+                .log()
+                .setMaxCount(count)
+                .call()
+                .map { it.fullMessage }
+        }
+
+    /** A commit made on the desktop, straight into the origin. */
+    private fun desktopCommit(
+        path: String,
+        bytes: ByteArray,
+        message: String,
+    ) = Git.open(origin).use { git ->
+        // The phone pushes into this checked-out branch; catch the tree up first.
+        git.reset().setMode(ResetType.HARD).call()
+        File(origin, path).apply { parentFile?.mkdirs() }.writeBytes(bytes)
+        git.add().addFilepattern(path).call()
+        git
+            .commit()
+            .setMessage(message)
+            .setAuthor("Desk", "desk@example.com")
+            .setSign(false)
+            .call()
     }
 
     @Test
@@ -111,7 +152,7 @@ class PasswordRepositoryTest {
                         .setMaxCount(1)
                         .call()
                         .first()
-                assertThat(head.fullMessage).isEqualTo("Add given password for bank/mellat to store.")
+                assertThat(head.fullMessage).isEqualTo("Save secret bank/mellat: Insert user supplied password")
                 assertThat(head.authorIdent.name).isEqualTo("Phone")
             }
             assertThat(repo.open("bank/mellat", "pass".toCharArray()).password).isEqualTo("s3cret")
@@ -156,7 +197,7 @@ class PasswordRepositoryTest {
                 assertThat(messages.take(2))
                     .containsExactly(
                         "Remove dev/github.com/parham from store.",
-                        "Rename github.com/parham to dev/github.com/parham.",
+                        "Save secret dev/github.com/parham: Move from github.com/parham to dev/github.com/parham",
                     ).inOrder()
             }
         }
@@ -218,7 +259,7 @@ class PasswordRepositoryTest {
                         .call()
                         .toList()
                 assertThat(head[0].fullMessage).isEqualTo("Remove alias/parham from store.")
-                assertThat(head[1].fullMessage).isEqualTo("Edit password for gh/parham using passwords-droid.")
+                assertThat(head[1].fullMessage).isEqualTo("Save secret gh/parham: Edit with passwords-droid")
             }
             assertThat(repo.items.value.map { it.name }).containsExactly("gh/parham", "github.com/parham")
         }
@@ -240,7 +281,7 @@ class PasswordRepositoryTest {
                         .setMaxCount(2)
                         .call()
                         .toList()
-                assertThat(log[0].fullMessage).isEqualTo("Set icon for github.com.")
+                assertThat(log[0].fullMessage).isEqualTo("Save secret github.com: Set folder icon")
                 assertThat(log[1].fullMessage).isEqualTo("seed")
             }
             assertThat(File(workTree, ".icons.json").readText()).contains("\"github\"")
@@ -269,8 +310,8 @@ class PasswordRepositoryTest {
             val history = repo.history("github.com/parham")
             assertThat(history.map { it.message })
                 .containsExactly(
-                    "Edit password for github.com/parham using passwords-droid.",
-                    "Edit password for github.com/parham using passwords-droid.",
+                    "Save secret github.com/parham: Edit with passwords-droid",
+                    "Save secret github.com/parham: Edit with passwords-droid",
                     "seed",
                 ).inOrder()
             assertThat(
@@ -287,7 +328,7 @@ class PasswordRepositoryTest {
                         .call()
                         .first()
                         .fullMessage,
-                ).startsWith("Restore github.com/parham to its version of ")
+                ).startsWith("Save secret github.com/parham: Restore version of ")
                 // Nothing was rewritten: all four versions are still there.
                 assertThat(
                     git
@@ -362,31 +403,83 @@ class PasswordRepositoryTest {
     @Test
     fun `changing recipients re-encrypts the folder, exports keys, and is one commit`() =
         runTest {
-            val repo = repository()
+            val meId = "0x" + me.fingerprintHex().takeLast(16)
+            desktopCommit(".gpg-id", "# the owner\n$meId\n".toByteArray(), "comment")
+            val carol = api.generateKey().modernKeyRing("Carol <carol@example.com>").toCertificate()
+            val repo = repository(extra = listOf(carol))
             repo.sync()
             repo.save("mine/a", PassEntry.parse("a-secret\n"))
             repo.save("mine/b", PassEntry.parse("b-secret\n"))
             val friendId = "0x" + friend.fingerprintHex().takeLast(16)
-            val meId = "0x" + me.fingerprintHex().takeLast(16)
 
-            repo.setRecipients("", listOf(meId, friendId), "pass".toCharArray())
+            repo.setRecipients("", listOf(meId, friendId, carol.fingerprintHex()), "pass".toCharArray())
 
             // The friend can now read everything the root .gpg-id governs...
             assertThat(
                 String(crypto.decrypt(File(workTree, "mine/a.gpg").readBytes(), listOf(friend), null)),
             ).startsWith("a-secret")
-            // ...but not the shared/ folder, which has its own .gpg-id and was left alone.
-            assertThat(File(workTree, ".gpg-id").readText().lines()).containsAtLeast(meId, friendId)
-            assertThat(File(workTree, ".public-keys/$friendId").isFile).isTrue()
-            Git.open(origin).use { git ->
-                val head =
-                    git
-                        .log()
-                        .setMaxCount(1)
-                        .call()
-                        .first()
-                assertThat(head.fullMessage).isEqualTo("Reencrypt store for $meId, $friendId.")
-            }
+            // ...the comment and the existing line stay, new ones are full fingerprints, as gopass writes them...
+            assertThat(File(workTree, ".gpg-id").readText())
+                .isEqualTo("# the owner\n$meId\n${friend.fingerprintHex()}\n${carol.fingerprintHex()}\n")
+            // ...a key gopass already exported is not exported twice; the others are named by fingerprint.
+            assertThat(
+                File(workTree, ".public-keys").list(),
+            ).asList().containsExactly("friend", me.fingerprintHex(), carol.fingerprintHex())
+            assertThat(originMessages(1).single())
+                .isEqualTo(
+                    "Add Recipient ${friend.fingerprintHex()}\n" +
+                        "Add Recipient ${carol.fingerprintHex()}\n" +
+                        "Update exported Public Keys",
+                )
+
+            repo.setRecipients("", listOf(meId, carol.fingerprintHex()), "pass".toCharArray())
+            assertThat(
+                File(workTree, ".gpg-id").readText(),
+            ).isEqualTo("# the owner\n$meId\n${carol.fingerprintHex()}\n")
+            assertThat(originMessages(1).single()).isEqualTo("Remove Recipient ${friend.fingerprintHex()}")
+        }
+
+    @Test
+    fun `a failure part way through re-encryption puts every file back`() =
+        runTest {
+            val repo = repository()
+            repo.sync()
+            repo.save("mine/a", PassEntry.parse("a-secret\n"))
+            repo.save("mine/b", PassEntry.parse("b-secret\n"))
+            val before =
+                listOf("github.com/parham.gpg", "mine/a.gpg", "mine/b.gpg", ".gpg-id").associateWith {
+                    File(workTree, it).readBytes()
+                }
+            // The last file cannot be written: the first ones already were when that is found out.
+            File(workTree, "mine/b.gpg").setWritable(false)
+            val friendId = "0x" + friend.fingerprintHex().takeLast(16)
+            val meId = "0x" + me.fingerprintHex().takeLast(16)
+
+            val error =
+                runCatching {
+                    repo.setRecipients(
+                        "",
+                        listOf(meId, friendId),
+                        "pass".toCharArray(),
+                    )
+                }.exceptionOrNull()
+
+            assertThat(error).isNotNull()
+            before.forEach { (path, bytes) -> assertThat(File(workTree, path).readBytes()).isEqualTo(bytes) }
+            Git.open(workTree).use { git -> assertThat(git.status().call().isClean).isTrue() }
+            // And the tree is still fit to pull.
+            File(workTree, "mine/b.gpg").setWritable(true)
+            repo.sync()
+        }
+
+    @Test
+    fun `an unlock entry comes from the folder being changed`() =
+        runTest {
+            val repo = repository()
+            repo.sync()
+            repo.save("shared/wifi", PassEntry.parse("x\n"))
+            assertThat(repo.governedEntries("shared")).containsExactly("shared/wifi")
+            assertThat(repo.governedEntries("")).containsExactly("github.com/parham")
         }
 
     @Test
@@ -407,6 +500,157 @@ class PasswordRepositoryTest {
             repo.sync()
             assertThrows(WrongPassphrase::class.java) {
                 kotlinx.coroutines.runBlocking { repo.open("github.com/parham", "nope".toCharArray()) }
+            }
+        }
+
+    @Test
+    fun `commit messages follow gopass for typed, generated and renamed entries`() =
+        runTest {
+            val repo = repository()
+            repo.sync()
+            repo.save("a", PassEntry.parse("typed\n"))
+            repo.save("b", PassEntry.parse("generated\n"), generated = true)
+            repo.save("a", PassEntry.parse("edited\n"), previousName = "a")
+            repo.saveText("c", "file\n", CommitMessages.file("c", "c.txt"))
+            assertThat(originMessages(4))
+                .containsExactly(
+                    "Save secret c: Copy file c.txt",
+                    "Save secret a: Edit with passwords-droid",
+                    "Save secret b: Generate Password",
+                    "Save secret a: Insert user supplied password",
+                ).inOrder()
+        }
+
+    @Test
+    fun `renaming a file alias moves the alias and leaves its entry alone`() =
+        runTest {
+            Git.open(origin).use { git ->
+                File(origin, "alias").mkdirs()
+                Files.createSymbolicLink(
+                    File(origin, "alias/parham.gpg").toPath(),
+                    File("../github.com/parham.gpg").toPath(),
+                )
+                git.add().addFilepattern(".").call()
+                git
+                    .commit()
+                    .setMessage("alias")
+                    .setAuthor("Desk", "desk@example.com")
+                    .setSign(false)
+                    .call()
+            }
+            val repo = repository()
+            repo.sync()
+
+            val entry = repo.open("alias/parham", "pass".toCharArray())
+            repo.save("links/gh", entry, previousName = "alias/parham")
+
+            assertThat(File(workTree, "github.com/parham.gpg").isFile).isTrue()
+            assertThat(Files.isSymbolicLink(File(workTree, "github.com/parham.gpg").toPath())).isFalse()
+            assertThat(File(workTree, "alias/parham.gpg").exists()).isFalse()
+            val link = File(workTree, "links/gh.gpg").toPath()
+            assertThat(Files.isSymbolicLink(link)).isTrue()
+            assertThat(Files.readSymbolicLink(link).toString()).isEqualTo("../github.com/parham.gpg")
+            assertThat(repo.open("links/gh", "pass".toCharArray()).password).isEqualTo("hunter2")
+            assertThat(repo.items.value.map { it.name }).containsExactly("github.com/parham", "links/gh")
+            assertThat(originMessages(1).single()).isEqualTo("Save secret links/gh: Move from alias/parham to links/gh")
+            Git.open(workTree).use { git -> assertThat(git.status().call().isClean).isTrue() }
+        }
+
+    @Test
+    fun `a revoked recipient key is named rather than failing inside the crypto`() =
+        runTest {
+            val revoked =
+                api
+                    .modify(friend)
+                    .revoke(
+                        org.pgpainless.key.protection.SecretKeyRingProtector
+                            .unprotectedKeys(),
+                    ).done()
+            desktopCommit(".public-keys/friend", revoked.toCertificate().toAsciiArmoredString().toByteArray(), "revoke")
+            val repo = repository()
+            repo.sync()
+            val error = runCatching { repo.save("shared/wifi", PassEntry.parse("x\n")) }.exceptionOrNull()
+            assertThat(error).isInstanceOf(MissingRecipients::class.java)
+            assertThat((error as MissingRecipients).ids).containsExactly("friend@example.com")
+            assertThat(error.reasons.getValue("friend@example.com")).contains("revoked")
+            assertThat(error.message).contains("Friend <friend@example.com> is revoked")
+        }
+
+    @Test
+    fun `a push that fails is scheduled, and the background sync rebases over desktop merges`() =
+        runTest {
+            var scheduled = 0
+            val repo = repository(scheduler = { scheduled++ })
+            repo.sync()
+            val away = File(root, "away")
+            check(origin.renameTo(away))
+
+            // Offline: the save still works, and the push is handed to the background.
+            repo.save("bank/mellat", PassEntry.parse("s3cret\n"))
+            assertThat(scheduled).isEqualTo(1)
+            assertThat(repo.syncStatus.value.pending).isEqualTo(1)
+            assertThat(repo.syncStatus.value.error).isNotNull()
+            assertThat(repo.pushPending()).isEqualTo(PasswordRepository.PushOutcome.RETRY)
+
+            // Meanwhile the desktop committed on a branch and merged it.
+            check(away.renameTo(origin))
+            Git.open(origin).use { git ->
+                git.reset().setMode(ResetType.HARD).call()
+                git.branchCreate().setName("side").call()
+                git.checkout().setName("side").call()
+            }
+            desktopCommit("side/one.gpg", crypto.encrypt("one\n".toByteArray(), listOf(me.toCertificate())), "side")
+            Git.open(origin).use { git ->
+                git.checkout().setName("main").call()
+            }
+            desktopCommit("main/two.gpg", crypto.encrypt("two\n".toByteArray(), listOf(me.toCertificate())), "main")
+            Git.open(origin).use { git ->
+                git
+                    .merge()
+                    .include(git.repository.resolve("side"))
+                    .setFastForward(org.eclipse.jgit.api.MergeCommand.FastForwardMode.NO_FF)
+                    .setMessage("Merge side")
+                    .call()
+            }
+
+            assertThat(repo.pushPending()).isEqualTo(PasswordRepository.PushOutcome.DONE)
+            assertThat(repo.syncStatus.value).isEqualTo(PasswordRepository.SyncStatus())
+            assertThat(originMessages(2))
+                .containsExactly("Save secret bank/mellat: Insert user supplied password", "Merge side")
+                .inOrder()
+            assertThat(repo.items.value.map { it.name }).containsAtLeast("bank/mellat", "main/two", "side/one")
+            assertThat(repo.history("side/one").map { it.message }).containsExactly("side")
+        }
+
+    @Test
+    fun `a desktop push in between is rebased over without bothering the background`() =
+        runTest {
+            var scheduled = 0
+            val repo = repository(scheduler = { scheduled++ })
+            repo.sync()
+            desktopCommit("desk/x.gpg", crypto.encrypt("x\n".toByteArray(), listOf(me.toCertificate())), "desk")
+            repo.save("phone/y", PassEntry.parse("y\n"))
+            assertThat(scheduled).isEqualTo(0)
+            assertThat(originMessages(2))
+                .containsExactly("Save secret phone/y: Insert user supplied password", "desk")
+                .inOrder()
+        }
+
+    @Test
+    fun `a pull over uncommitted changes says so instead of failing to abort`() =
+        runTest {
+            val repo = repository()
+            repo.sync()
+            desktopCommit(
+                "github.com/parham.gpg",
+                crypto.encrypt("desk\n".toByteArray(), listOf(me.toCertificate())),
+                "desk edit",
+            )
+            File(workTree, "github.com/parham.gpg").writeBytes(byteArrayOf(1, 2, 3))
+            val error = runCatching { repo.sync() }.exceptionOrNull()
+            assertThat(error).isInstanceOf(SyncConflict::class.java)
+            Git.open(workTree).use { git ->
+                assertThat(git.repository.repositoryState).isEqualTo(org.eclipse.jgit.lib.RepositoryState.SAFE)
             }
         }
 }

@@ -3,6 +3,8 @@ package me.parham1995.passwords.data.git
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.api.RebaseCommand
+import org.eclipse.jgit.api.RebaseResult
 import org.eclipse.jgit.api.TransportConfigCallback
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.ObjectId
@@ -51,7 +53,10 @@ class StoreGit(
                 .setHomeDirectory(store.directory.parentFile)
                 .setSshDirectory(store.directory)
                 .setPreferredAuthentications("publickey")
-                .setDefaultIdentities { listOf(store.identity.toPath()) }
+                // The private key is sealed on disk; sshd gets it from memory
+                // and never looks for an identity file.
+                .setDefaultIdentities { emptyList() }
+                .setDefaultKeysProvider { listOfNotNull(store.keyPair()) }
                 .setConfigFile { store.configFile() }
                 // GitHub's published host keys and nothing else: there is no
                 // one on a phone to ask whether a new key is fine.
@@ -94,13 +99,60 @@ class StoreGit(
                         .setTimeout(TIMEOUT_SECONDS)
                         .call()
                 if (!result.isSuccessful) {
-                    git.rebase().setOperation(org.eclipse.jgit.api.RebaseCommand.Operation.ABORT).call()
-                    throw SyncConflict(
-                        "the same entry changed here and elsewhere; " +
-                            (result.rebaseResult?.conflicts?.joinToString() ?: result.toString()),
-                    )
+                    val rebase = result.rebaseResult
+                    // Only a rebase that stopped part way has anything to
+                    // abort; asking JGit to abort when none is in progress
+                    // throws and hides the real reason.
+                    if (git.repository.repositoryState.isRebasing) {
+                        git.rebase().setOperation(RebaseCommand.Operation.ABORT).call()
+                    }
+                    when (rebase?.status) {
+                        RebaseResult.Status.CONFLICTS, RebaseResult.Status.STOPPED ->
+                            throw SyncConflict(
+                                "the same entry changed here and elsewhere; " +
+                                    (rebase.conflicts?.joinToString() ?: rebase.status.toString()),
+                            )
+                        RebaseResult.Status.UNCOMMITTED_CHANGES ->
+                            throw SyncConflict(
+                                "the store has uncommitted changes: " +
+                                    rebase.uncommittedChanges.orEmpty().joinToString(),
+                            )
+                        else -> throw SyncConflict("pull failed: ${rebase?.status ?: result}")
+                    }
                 }
                 git.repository.resolve(Constants.HEAD).name
+            }
+        }
+
+    /**
+     * Puts [paths] back the way HEAD has them, in the index and on disk, and
+     * removes those HEAD does not have -- undoing a change that was written
+     * but could not be committed as a whole.
+     */
+    suspend fun restore(paths: Collection<String>) =
+        withContext(Dispatchers.IO) {
+            if (paths.isEmpty()) return@withContext
+            open().use { git ->
+                val repo = git.repository
+                val head = repo.resolve(Constants.HEAD)
+                val tree = head?.let { id -> RevWalk(repo).use { it.parseCommit(id).tree } }
+                val (tracked, untracked) =
+                    paths.partition { path ->
+                        tree != null &&
+                            TreeWalk.forPath(repo, path, tree) != null
+                    }
+                if (tracked.isNotEmpty()) {
+                    git.reset().apply { tracked.forEach { addPath(it) } }.call()
+                    git
+                        .checkout()
+                        .setStartPoint(Constants.HEAD)
+                        .apply { tracked.forEach { addPath(it) } }
+                        .call()
+                }
+                untracked.forEach { path ->
+                    if (head != null) git.reset().addPath(path).call()
+                    File(workTree, path).delete()
+                }
             }
         }
 
@@ -112,7 +164,12 @@ class StoreGit(
     ) = withContext(Dispatchers.IO) {
         open().use { git ->
             paths.forEach { path ->
-                if (File(workTree, path).exists()) {
+                // A symlink is staged as itself, even when it dangles.
+                if (java.nio.file.Files.exists(
+                        File(workTree, path).toPath(),
+                        java.nio.file.LinkOption.NOFOLLOW_LINKS,
+                    )
+                ) {
                     git.add().addFilepattern(path).call()
                 } else {
                     git.rm().addFilepattern(path).call()
@@ -128,7 +185,11 @@ class StoreGit(
         }
     }
 
-    /** Pushes [branch]; on a rejection, pulls once and tries again. */
+    /**
+     * Pushes [branch]; on a rejection, pulls (rebasing) and tries again. The
+     * desktop's gopass pushes after every change, so a rejected push is the
+     * normal case, not an error.
+     */
     suspend fun push() =
         withContext(Dispatchers.IO) {
             repeat(PUSH_ATTEMPTS) { attempt ->
@@ -148,7 +209,7 @@ class StoreGit(
                     }
                 if (rejection == null) return@withContext
                 if (attempt == PUSH_ATTEMPTS - 1) {
-                    throw SyncConflict("push refused: ${rejection.status} ${rejection.message.orEmpty()}".trim())
+                    throw PushRejected("push refused: ${rejection.status} ${rejection.message.orEmpty()}".trim())
                 }
                 pull()
             }
@@ -254,13 +315,19 @@ class StoreGit(
 
     private companion object {
         const val TIMEOUT_SECONDS = 120
-        const val PUSH_ATTEMPTS = 2
+        const val PUSH_ATTEMPTS = 3
         const val HISTORY_LIMIT = 100
         const val MILLIS = 1000L
         const val GPG = ".gpg"
     }
 }
 
+/** Both sides changed the same entry, or the tree is in no state to pull: a person has to look. */
 class SyncConflict(
+    message: String,
+) : Exception(message)
+
+/** The remote kept refusing the push even after pulling; worth trying again later. */
+class PushRejected(
     message: String,
 ) : Exception(message)

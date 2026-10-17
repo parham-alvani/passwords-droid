@@ -10,6 +10,7 @@ import me.parham1995.passwords.crypto.PgpCrypto
 import me.parham1995.passwords.data.git.SshKeyStore
 import me.parham1995.passwords.data.git.StoreGit
 import me.parham1995.passwords.data.security.KeystoreBox
+import me.parham1995.passwords.data.sync.SyncWorker
 import me.parham1995.passwords.store.PasswordStore
 import java.io.File
 import javax.inject.Singleton
@@ -38,6 +39,13 @@ object DataModule {
         @ApplicationContext context: Context,
     ): PassphraseCache = PassphraseCache(context.getSharedPreferences("sealed-passphrases", Context.MODE_PRIVATE))
 
+    /** The deploy key, sealed by the same at-rest key as the OpenPGP keys. */
+    @Provides
+    @Singleton
+    fun sshKeys(
+        @ApplicationContext context: Context,
+    ): SshKeyStore = SshKeyStore(File(context.filesDir, "ssh"), KeystoreBox.atRest(), File(context.filesDir, "git"))
+
     @Provides
     @Singleton
     fun repository(
@@ -58,6 +66,7 @@ object DataModule {
                 StoreGit(root, current.remoteUrl, current.branch, keys, configDir)
             },
             settings = settings::current,
+            scheduler = SyncWorker.scheduler(context),
         )
     }
 }

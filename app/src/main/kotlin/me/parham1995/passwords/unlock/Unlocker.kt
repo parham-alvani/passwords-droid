@@ -73,7 +73,7 @@ class Unlocker
             return passphrase
         }
 
-        fun check(
+        suspend fun check(
             key: OpenPGPKey,
             passphrase: CharArray,
         ): Boolean = repository.isPassphraseCorrect(key, passphrase)
