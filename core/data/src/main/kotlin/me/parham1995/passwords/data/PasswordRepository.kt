@@ -175,7 +175,7 @@ class PasswordRepository(
             target = open(next, passphrase)
             chain += next
         }
-        return Opened(entry, target.password, chain.drop(1), document)
+        return Opened(entry, target.password, chain.drop(1), document, text)
     }
 
     /** Whether an entry called [name] exists. */
@@ -188,6 +188,8 @@ class PasswordRepository(
         val via: List<String>,
         /** Set when the entry is a file (a certificate, a VPN profile) rather than a login. */
         val document: Documents.Document? = null,
+        /** The decrypted text exactly as stored, for sharing the whole entry. */
+        val text: String = entry.format(),
     )
 
     /**

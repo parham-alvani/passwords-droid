@@ -27,6 +27,13 @@ data class Settings(
     /** How long a typed passphrase is remembered after its last use. */
     val passphraseMinutes: Int = 5,
     val biometricUnlock: Boolean = true,
+    /** The share page links point at, e.g. `https://example.com/share/`. Empty: sharing is off. */
+    val shareBaseUrl: String = "",
+    /** The GitHub repository behind the share page, `owner/name`. */
+    val shareRepository: String = "",
+    val shareBranch: String = "main",
+    /** Where in that repository shares go; the page fetches `s/<id>.age`. */
+    val sharePrefix: String = "s/",
 ) {
     val isConfigured: Boolean get() = remoteUrl.isNotBlank()
 }
@@ -51,6 +58,10 @@ class SettingsStore
                 prefs[CLIPBOARD] = next.clipboardSeconds
                 prefs[PASSPHRASE_MINUTES] = next.passphraseMinutes
                 prefs[BIOMETRIC] = next.biometricUnlock
+                prefs[SHARE_BASE_URL] = next.shareBaseUrl
+                prefs[SHARE_REPOSITORY] = next.shareRepository
+                prefs[SHARE_BRANCH] = next.shareBranch
+                prefs[SHARE_PREFIX] = next.sharePrefix
             }
         }
 
@@ -64,6 +75,10 @@ class SettingsStore
                 clipboardSeconds = this[CLIPBOARD] ?: defaults.clipboardSeconds,
                 passphraseMinutes = this[PASSPHRASE_MINUTES] ?: defaults.passphraseMinutes,
                 biometricUnlock = this[BIOMETRIC] ?: defaults.biometricUnlock,
+                shareBaseUrl = this[SHARE_BASE_URL] ?: defaults.shareBaseUrl,
+                shareRepository = this[SHARE_REPOSITORY] ?: defaults.shareRepository,
+                shareBranch = this[SHARE_BRANCH] ?: defaults.shareBranch,
+                sharePrefix = this[SHARE_PREFIX] ?: defaults.sharePrefix,
             )
         }
 
@@ -75,5 +90,9 @@ class SettingsStore
             val CLIPBOARD = intPreferencesKey("clipboard_seconds")
             val PASSPHRASE_MINUTES = intPreferencesKey("passphrase_minutes")
             val BIOMETRIC = booleanPreferencesKey("biometric_unlock")
+            val SHARE_BASE_URL = stringPreferencesKey("share_base_url")
+            val SHARE_REPOSITORY = stringPreferencesKey("share_repository")
+            val SHARE_BRANCH = stringPreferencesKey("share_branch")
+            val SHARE_PREFIX = stringPreferencesKey("share_prefix")
         }
     }

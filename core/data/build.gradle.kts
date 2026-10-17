@@ -26,6 +26,8 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.kotlinx.coroutines.android)
+    // The GitHub contents API speaks JSON; the builder and parser only, no plugin.
+    implementation(libs.kotlinx.serialization.json)
     // A push that fails is retried in the background by a Hilt-built worker.
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.hilt.work)
@@ -46,6 +48,10 @@ dependencies {
     testImplementation(libs.truth)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
+    // To open what a share uploaded, as the page would.
+    testImplementation(libs.kage) {
+        exclude(group = "org.bouncycastle", module = "bcprov-jdk15to18")
+    }
     testImplementation(libs.androidx.test.core)
     testRuntimeOnly(libs.slf4j.simple)
 }

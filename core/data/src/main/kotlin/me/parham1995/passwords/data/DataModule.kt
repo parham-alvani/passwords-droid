@@ -1,6 +1,7 @@
 package me.parham1995.passwords.data
 
 import android.content.Context
+import androidx.datastore.preferences.preferencesDataStore
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -10,10 +11,15 @@ import me.parham1995.passwords.crypto.PgpCrypto
 import me.parham1995.passwords.data.git.SshKeyStore
 import me.parham1995.passwords.data.git.StoreGit
 import me.parham1995.passwords.data.security.KeystoreBox
+import me.parham1995.passwords.data.share.ShareRepository
+import me.parham1995.passwords.data.share.ShareTokenStore
 import me.parham1995.passwords.data.sync.SyncWorker
 import me.parham1995.passwords.store.PasswordStore
 import java.io.File
 import javax.inject.Singleton
+
+/** Which shares this phone made; never their keys. */
+private val Context.shareHistory by preferencesDataStore(name = "shares")
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -69,4 +75,19 @@ object DataModule {
             scheduler = SyncWorker.scheduler(context),
         )
     }
+
+    /** The share page's GitHub token, sealed by the same at-rest key as the OpenPGP keys. */
+    @Provides
+    @Singleton
+    fun shareToken(
+        @ApplicationContext context: Context,
+    ): ShareTokenStore = ShareTokenStore(File(context.filesDir, "share/token.sealed"), KeystoreBox.atRest())
+
+    @Provides
+    @Singleton
+    fun shares(
+        @ApplicationContext context: Context,
+        token: ShareTokenStore,
+        settings: SettingsStore,
+    ): ShareRepository = ShareRepository(settings::current, token, context.shareHistory)
 }
