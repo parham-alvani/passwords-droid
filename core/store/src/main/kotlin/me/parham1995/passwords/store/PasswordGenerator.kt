@@ -45,5 +45,36 @@ object PasswordGenerator {
         return chars.joinToString("")
     }
 
+    /** gopass's symbol class (`pwgen.Syms`), for telling which classes a charset holds. */
+    private const val GOPASS_SYMBOLS = "!\"#\$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+
+    /**
+     * [length] characters drawn from [charset], as gopass's
+     * `GeneratePasswordCharset` does for a `gopass create` attribute with a
+     * `charset`. With [strict] (`GeneratePasswordCharsetStrict`) every class --
+     * digits, upper case, lower case, symbols -- that [charset] contains at all
+     * appears at least once.
+     */
+    fun fromCharset(
+        length: Int,
+        charset: String,
+        strict: Boolean = false,
+        random: SecureRandom = SecureRandom(),
+    ): String {
+        require(charset.isNotEmpty()) { "empty character set" }
+        require(length > 0) { "length must be positive" }
+        val chars = MutableList(length) { charset[random.nextInt(charset.length)] }
+        if (strict) {
+            val classes =
+                listOf(DIGITS, UPPER, LOWER, GOPASS_SYMBOLS)
+                    .map { set -> charset.filter { it in set } }
+                    .filter { it.isNotEmpty() }
+            require(length >= classes.size) { "too short to include every class" }
+            val positions = (0 until length).shuffled(random).take(classes.size)
+            classes.zip(positions).forEach { (set, at) -> chars[at] = set[random.nextInt(set.length)] }
+        }
+        return chars.joinToString("")
+    }
+
     private fun <T> Iterable<T>.shuffled(random: SecureRandom): List<T> = toMutableList().apply { shuffle(random) }
 }
