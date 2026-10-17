@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.serialization.Serializable
 import me.parham1995.passwords.data.SettingsStore
+import me.parham1995.passwords.feature.create.CreateScreen
 import me.parham1995.passwords.feature.edit.EditScreen
 import me.parham1995.passwords.feature.entry.EntryScreen
 import me.parham1995.passwords.feature.health.HealthScreen
@@ -42,6 +43,12 @@ data class Entry(
 @Serializable
 data class Edit(
     val name: String? = null,
+    val folder: String = "",
+)
+
+/** The new-entry flow: a `gopass create` template, or [Edit]'s plain form in [folder]. */
+@Serializable
+data class Create(
     val folder: String = "",
 )
 
@@ -89,7 +96,7 @@ fun PasswordsNavHost() {
         composable<Entries> {
             ListScreen(
                 onOpen = { nav.navigate(Entry(it)) },
-                onAdd = { folder -> nav.navigate(Edit(folder = folder)) },
+                onAdd = { folder -> nav.navigate(Create(folder = folder)) },
                 onSettings = { nav.navigate(Preferences) },
             )
         }
@@ -101,6 +108,14 @@ fun PasswordsNavHost() {
                 onEdit = { nav.navigate(Edit(name = route.name)) },
                 onOpen = { nav.navigate(Entry(it)) },
                 onHistory = { nav.navigate(History(route.name)) },
+            )
+        }
+        composable<Create> { back ->
+            val route = back.toRoute<Create>()
+            CreateScreen(
+                onBack = { nav.popBackStack() },
+                onBlank = { nav.navigate(Edit(folder = route.folder)) { popUpTo<Create> { inclusive = true } } },
+                onDone = { saved -> nav.navigate(Entry(saved)) { popUpTo<Create> { inclusive = true } } },
             )
         }
         composable<Edit> { back ->
