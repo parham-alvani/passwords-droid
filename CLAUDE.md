@@ -57,6 +57,14 @@ The suggestion icon is `ic_autofill_key`, a plain vector: an adaptive launcher i
 
 An entry is passwordless when its password is empty and it has a `login-method` field (`PassEntry.isPasswordless`; labels from `LoginMethods`). It shows "Sign in with <provider>", is not scored by the health check, and fills only the username. Suggestions are built from names, so the provider label and the Credential Manager skip rely on `PasswordRepository.loginMethods`, an in-memory map of passwordless entries decrypted since start; it is never persisted. A `PasswordCredential` cannot carry an empty password, so a passwordless entry chosen in the sign-in sheet answers with an error.
 
+## Share links
+
+`ShareRepository` makes links for a static "share" page on GitHub Pages, and must stay byte-compatible with it: standard age v1 binary, X25519 only (never `age -p`), to a fresh identity per share (`AgeShare`, on kage); the file goes to `<prefix><id>.age` with `<id>` 16 random bytes in lower-case hex; commits read `share: add <id>` and `share: revoke <id>`; the link is `<base>#<id>.<AGE-SECRET-KEY-1…>` with the key in upper case, which is the pattern the page's `app.js` accepts.
+
+Where the page lives is settings only (address, `owner/name`, branch, folder) with empty defaults; never build in an organisation, repository or URL. The GitHub token is sealed with the at-rest `SecretBox` and never shown back or logged. The phone keeps a list of the shares it made for revoking, but never a link's key: a link is shown once, when it is made.
+
+kage depends on `bcprov-jdk15to18`; PGPainless brings `bcprov-jdk18on`. The jdk15to18 artifact is excluded wherever kage is added, so only one BouncyCastle is on the classpath; two fail Android's duplicate-class check.
+
 ## Tests
 
 Robolectric runs against SDK 34 (`core/data/src/test/resources/robolectric.properties`): it needs Java 21 to sandbox SDK 37 and the build is pinned to 17. There is no AndroidKeyStore under Robolectric, so code that seals things takes a `SecretBox` and tests pass a clear one.

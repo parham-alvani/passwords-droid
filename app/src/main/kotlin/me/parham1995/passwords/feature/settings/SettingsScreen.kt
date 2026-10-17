@@ -155,6 +155,8 @@ fun SettingsScreen(
                 OutlinedButton(onClick = { pickKey.launch(arrayOf("*/*")) }) { Text("Import key") }
             }
 
+            Section("Sharing") { SharingSection(viewModel) }
+
             Section("Git") {
                 Text(settings.remoteUrl, fontFamily = FontFamily.Monospace)
                 Text("Branch ${settings.branch}")
@@ -200,7 +202,7 @@ fun SettingsScreen(
             title = { Text("Remove everything?") },
             text = {
                 Text(
-                    "Deletes the imported keys, the SSH key and the local copy of the store. " +
+                    "Deletes the imported keys, the SSH key, the sharing token and the local copy of the store. " +
                         "Unpushed changes are lost. " +
                         "The repository on the server is not touched; remove the deploy key there yourself.",
                 )

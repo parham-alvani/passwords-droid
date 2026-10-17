@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
@@ -63,6 +64,8 @@ fun EntryScreen(
         hiltViewModel<EntryViewModel, EntryViewModel.Factory>(key = name) { it.create(name) },
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val canShare by viewModel.canShare.collectAsStateWithLifecycle()
+    var sharing by remember { mutableStateOf(false) }
     UnlockPrompts(viewModel)
 
     Scaffold(
@@ -75,6 +78,9 @@ fun EntryScreen(
                 actions = {
                     TextButton(onClick = onHistory) { Text("History") }
                     if (state is EntryViewModel.State.Shown) {
+                        if (canShare) {
+                            IconButton(onClick = { sharing = true }) { Icon(Icons.Default.Share, "Share as a link") }
+                        }
                         IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "Edit") }
                     }
                 },
@@ -100,6 +106,15 @@ fun EntryScreen(
                 is EntryViewModel.State.Shown -> EntryDetails(current.opened, viewModel, onOpen)
             }
         }
+    }
+
+    (state as? EntryViewModel.State.Shown)?.opened?.takeIf { sharing }?.let { opened ->
+        // A file or an account with no password of its own has only the whole entry to share.
+        ShareDialog(
+            viewModel,
+            offerPassword = opened.document == null && opened.password.isNotBlank(),
+            onDismiss = { sharing = false },
+        )
     }
 }
 
