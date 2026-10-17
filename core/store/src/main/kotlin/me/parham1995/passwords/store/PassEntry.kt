@@ -133,6 +133,12 @@ data class PassEntry(
                 ?.trim('/')
                 ?.takeIf { it.isNotEmpty() }
 
+        /**
+         * Whether [key] reads back as a field name: parsing `key: value` with
+         * any other key turns the line into a note.
+         */
+        fun isValidKey(key: String): Boolean = key == key.trim() && FIELD.matches("$key:")
+
         fun parse(text: String): PassEntry {
             val lines = text.replace("\r\n", "\n").split('\n')
             val body = lines.drop(1)

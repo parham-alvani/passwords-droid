@@ -131,6 +131,32 @@ class PassEntryTest {
     }
 
     @Test
+    fun `an edited yaml field is written back as yaml, in place`() {
+        val entry = PassEntry.parse("pw\n---\nusername: me\npin: \"0042\"\nnote: |\n  a\n  b\n")
+        val edited =
+            entry.copy(
+                fields =
+                    entry.fields.map { if (it.key == "pin") it.copy(value = "0043") else it } +
+                        PassEntry.Field("hint", "yes"),
+            )
+
+        assertThat(
+            edited.format(),
+        ).isEqualTo("pw\n---\nusername: me\npin: \"0043\"\nnote: |\n  a\n  b\nhint: \"yes\"\n")
+        assertThat(PassEntry.parse(edited.format())).isEqualTo(edited)
+    }
+
+    @Test
+    fun `only keys that parse back are valid`() {
+        assertThat(PassEntry.isValidKey("security question")).isTrue()
+        assertThat(PassEntry.isValidKey("pin.2")).isTrue()
+        assertThat(PassEntry.isValidKey("")).isFalse()
+        assertThat(PassEntry.isValidKey(" pin")).isFalse()
+        assertThat(PassEntry.isValidKey("a:b")).isFalse()
+        assertThat(PassEntry.isValidKey("-pin")).isFalse()
+    }
+
+    @Test
     fun `format round-trips`() {
         val original = PassEntry.parse("pw\nlogin: a\nurl: b\notpauth://totp/x?secret=AA\nsome\nnotes\n")
         assertThat(PassEntry.parse(original.format())).isEqualTo(original)

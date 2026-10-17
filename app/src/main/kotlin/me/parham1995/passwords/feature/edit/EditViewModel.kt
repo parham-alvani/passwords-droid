@@ -39,12 +39,12 @@ class EditViewModel
         data class Form(
             val name: String = "",
             val password: String = "",
-            val username: String = "",
-            val url: String = "",
             val otp: String = "",
             val notes: String = "",
-            /** Fields other than the ones above, kept as they were. */
-            val otherFields: List<PassEntry.Field> = emptyList(),
+            /** The entry's fields, in file order, with their keys as written. */
+            val fields: List<PassEntry.Field> = emptyList(),
+            /** Written back as a gopass YAML body, because it was read as one. */
+            val yaml: Boolean = false,
             val loading: Boolean = false,
             val saving: Boolean = false,
             val error: String? = null,
@@ -72,7 +72,12 @@ class EditViewModel
 
         init {
             if (original == null) {
-                _form.update { it.copy(password = PasswordGenerator.generate()) }
+                _form.update {
+                    it.copy(
+                        password = PasswordGenerator.generate(),
+                        fields = listOf(PassEntry.Field("login", ""), PassEntry.Field("url", "")),
+                    )
+                }
             } else {
                 unlock(original)
             }
@@ -96,6 +101,46 @@ class EditViewModel
 
         fun generate() = edit { it.copy(password = PasswordGenerator.generate()) }
 
+        fun editField(
+            index: Int,
+            transform: (PassEntry.Field) -> PassEntry.Field,
+        ) = edit { form -> form.copy(fields = form.fields.mapIndexed { i, f -> if (i == index) transform(f) else f }) }
+
+        fun addField() = edit { it.copy(fields = it.fields + PassEntry.Field("", "")) }
+
+        fun removeField(index: Int) =
+            edit { form -> form.copy(fields = form.fields.filterIndexed { i, _ -> i != index }) }
+
+        /** The fields as they will be written, or why they cannot be. */
+        private fun cleanFields(form: Form): Result<List<PassEntry.Field>> {
+            val fields =
+                form.fields.mapNotNull { field ->
+                    if (field.nested) return@mapNotNull field
+                    val key = field.key.trim()
+                    // A YAML block keeps its inner lines; anything else is one trimmed line.
+                    val value = field.value.trimEnd().let { if (form.yaml && '\n' in it) it else it.trim() }
+                    // An empty row is dropped; an existing field with an empty value is kept.
+                    if (value.isEmpty() && (key.isEmpty() || isNew)) null else PassEntry.Field(key, value)
+                }
+            fields.firstOrNull { !it.nested && !PassEntry.isValidKey(it.key) }?.let {
+                return Result.failure(
+                    IllegalArgumentException("\"${it.key}\" is not a field name: use letters, digits, spaces, _ . -"),
+                )
+            }
+            if (!form.yaml) {
+                fields.firstOrNull { '\n' in it.value }?.let {
+                    return Result.failure(IllegalArgumentException("${it.key} must be one line in a key: value entry"))
+                }
+            } else {
+                fields.groupBy { it.key }.entries.firstOrNull { it.value.size > 1 }?.let {
+                    return Result.failure(
+                        IllegalArgumentException("${it.key} is there twice; YAML keys must be unique"),
+                    )
+                }
+            }
+            return Result.success(fields)
+        }
+
         fun save() =
             viewModelScope.launch {
                 val form = _form.value
@@ -108,19 +153,19 @@ class EditViewModel
                     _form.update { it.copy(error = "$name already exists") }
                     return@launch
                 }
-                _form.update { it.copy(saving = true) }
                 val known =
-                    buildList {
-                        if (form.username.isNotBlank()) add(PassEntry.Field("login", form.username.trim()))
-                        if (form.url.isNotBlank()) add(PassEntry.Field("url", form.url.trim()))
-                        addAll(form.otherFields)
+                    cleanFields(form).getOrElse { e ->
+                        _form.update { it.copy(error = e.message) }
+                        return@launch
                     }
+                _form.update { it.copy(saving = true) }
                 val entry =
                     PassEntry(
                         password = form.password,
                         fields = known,
                         otpUri = form.otp.trim().ifEmpty { null },
                         notes = form.notes.trimEnd(),
+                        yaml = form.yaml,
                     )
                 // A new entry in a folder with a .pass-template is shaped by it, as
                 // `gopass generate` does -- unless something was typed beyond
@@ -170,17 +215,14 @@ class EditViewModel
             viewModelScope.launch {
                 try {
                     val entry = repository.open(name, passphrase)
-                    val usernameField = entry.fields.firstOrNull { it.value == entry.username }
-                    val urlField = entry.fields.firstOrNull { it.value == entry.url && it != usernameField }
                     _form.value =
                         Form(
                             name = name,
                             password = entry.password,
-                            username = entry.username.orEmpty(),
-                            url = entry.url.orEmpty(),
                             otp = entry.otpUri.orEmpty(),
                             notes = entry.notes,
-                            otherFields = entry.fields.filterNot { it == usernameField || it == urlField },
+                            fields = entry.fields,
+                            yaml = entry.yaml,
                         )
                 } catch (e: PgpException) {
                     onUnlockFailed(e.message ?: "Could not decrypt")
