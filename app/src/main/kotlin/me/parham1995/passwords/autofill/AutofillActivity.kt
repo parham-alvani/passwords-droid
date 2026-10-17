@@ -94,8 +94,9 @@ class AutofillActivity : ComponentActivity() {
                         } else {
                             AutofillAction.Match
                         }
-                    val credentials =
-                        Credentials(outcome.username.toCharArray(), outcome.password.toCharArray(), outcome.otp)
+                    // A passwordless (SSO) account fills the username and leaves the password field alone.
+                    val password = if (outcome.loginMethod != null) null else outcome.password.toCharArray()
+                    val credentials = Credentials(outcome.username.toCharArray(), password, outcome.otp)
                     val dataset = Dataset.Builder().apply { fillWith(scenario, action, credentials) }.build()
                     setResult(
                         Activity.RESULT_OK,

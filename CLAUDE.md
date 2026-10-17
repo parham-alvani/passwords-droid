@@ -51,6 +51,12 @@ Keep Android out of the two JVM modules. Their tests run in seconds, and anythin
 
 The suggestion icon is `ic_autofill_key`, a plain vector: an adaptive launcher icon draws as a blank square in the keyboard's inline chips.
 
+## gopass create and passwordless entries
+
+`feature/create` is the new-entry flow: the list's add button opens a choice of `gopass create` templates (`CreateWizard.load` via `PasswordRepository.createTemplates`: the store's `.gopass/create` files, or gopass's defaults when none read -- never written to the store) or the plain `EditScreen` form. `WizardForm` maps what was typed to `CreateWizard.Answer`s and is tested on the JVM; the entry is saved with `saveText` and `CommitMessages.create`.
+
+An entry is passwordless when its password is empty and it has a `login-method` field (`PassEntry.isPasswordless`; labels from `LoginMethods`). It shows "Sign in with <provider>", is not scored by the health check, and fills only the username. Suggestions are built from names, so the provider label and the Credential Manager skip rely on `PasswordRepository.loginMethods`, an in-memory map of passwordless entries decrypted since start; it is never persisted. A `PasswordCredential` cannot carry an empty password, so a passwordless entry chosen in the sign-in sheet answers with an error.
+
 ## Tests
 
 Robolectric runs against SDK 34 (`core/data/src/test/resources/robolectric.properties`): it needs Java 21 to sandbox SDK 37 and the build is pinned to 17. There is no AndroidKeyStore under Robolectric, so code that seals things takes a `SecretBox` and tests pass a clear one.

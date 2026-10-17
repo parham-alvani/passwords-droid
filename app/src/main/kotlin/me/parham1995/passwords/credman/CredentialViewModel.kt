@@ -37,6 +37,11 @@ class CredentialViewModel
                 val password: String,
                 /** The current one-time code, for forms that ask for it too. */
                 val otp: String? = null,
+                /**
+                 * Set for an SSO / social login with no password of its own:
+                 * only the username is filled, and [password] is empty.
+                 */
+                val loginMethod: String? = null,
             ) : Outcome
 
             data object Saved : Outcome
@@ -101,7 +106,11 @@ class CredentialViewModel
                             opened.entry.otp
                                 ?.let(Totp::parse)
                                 ?.code(System.currentTimeMillis())
-                        Outcome.Filled(username, opened.password, otp)
+                        val loginMethod =
+                            opened.entry.loginMethod?.takeIf {
+                                opened.entry.isPasswordless && opened.password.isBlank()
+                            }
+                        Outcome.Filled(username, opened.password, otp, loginMethod)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: PgpException) {

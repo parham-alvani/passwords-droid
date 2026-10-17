@@ -25,6 +25,9 @@ Early, and used daily on one phone. Set up, sync, browse, search, open, copy, ed
 - **History** — every version of an entry from git, and restoring one as a new commit
 - **Files** — certificates, keys and VPN profiles open as files with copy and save-as; any file can be added, as text or as a gopass attachment
 - **gopass templates** — a folder's `.pass-template` shapes new entries in it, as `gopass generate` does
+- **`gopass create` wizards** — a new entry can start from the store's `.gopass/create` templates, or gopass's own (website login, PIN, SSO / passwordless login) when it has none; the name is built from the answers as gopass builds it, and taken names ask before overwriting
+- **SSO and social logins** — an entry with no password and a `login-method` (Google, Apple, GitHub, Microsoft, SSO, magic link) shows "Sign in with Google" instead of a password, fills only the username, and is left out of the health check
+- **Sync status** — changes waiting to be pushed, a failed push or a conflict show at the top of the list, with a retry
 - **Recipients** — see who a `.gpg-id` names and re-encrypt a folder or the whole store for a new set, as one commit
 - **Compatible with `pass` and gopass** — the first line is the password; `key: value` lines, gopass's YAML body and `otpauth://` URIs are understood; files are written back in the same shape they were read in
 - **Every recipient, every time** — an entry is encrypted for everyone in the nearest `.gpg-id`, using imported keys and gopass's exported `.public-keys`; a save that would leave a recipient out is refused instead

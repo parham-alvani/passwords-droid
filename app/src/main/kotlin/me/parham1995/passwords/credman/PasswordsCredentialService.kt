@@ -73,7 +73,10 @@ class PasswordsCredentialService : CredentialProviderService() {
         val entries = mutableListOf<CredentialEntry>()
         request.beginGetCredentialOptions.filterIsInstance<BeginGetPasswordOption>().forEach { option ->
             val matches = target?.let { CredentialMatcher.find(repository.items.value, it) }.orEmpty()
-            matches.forEach { match ->
+            // A password credential needs a password: entries known to be SSO
+            // logins (decrypted earlier in this process) are not offered.
+            val passwordless = repository.loginMethods.value
+            matches.filterNot { it.item.name in passwordless }.forEach { match ->
                 entries +=
                     PasswordCredentialEntry
                         .Builder(this, match.username, CredentialActivity.fill(this, match.item.name), option)

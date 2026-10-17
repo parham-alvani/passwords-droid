@@ -45,6 +45,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.parham1995.passwords.data.PasswordRepository
+import me.parham1995.passwords.store.LoginMethods
 import me.parham1995.passwords.store.Totp
 import me.parham1995.passwords.store.WifiQr
 import me.parham1995.passwords.ui.SecretClipboard
@@ -119,7 +120,9 @@ private fun EntryDetails(
         DocumentCard(document, onCopy = { copy(document.fileName, it) })
         return
     }
-    if (WifiQr.isWifi(viewModel.name, entry)) {
+    // An SSO / social login: nothing to copy, share or score, just how to sign in.
+    val loginMethod = entry.loginMethod?.takeIf { entry.isPasswordless && opened.password.isBlank() }
+    if (loginMethod == null && WifiQr.isWifi(viewModel.name, entry)) {
         var sharing by remember { mutableStateOf(false) }
         ElevatedCard(Modifier.fillMaxWidth()) {
             Row(
@@ -138,7 +141,11 @@ private fun EntryDetails(
             })
         }
     }
-    SecretRow("Password", opened.password, secret = true, onCopy = { copy("Password", opened.password) })
+    if (loginMethod != null) {
+        SignInRow(loginMethod)
+    } else {
+        SecretRow("Password", opened.password, secret = true, onCopy = { copy("Password", opened.password) })
+    }
     opened.via.lastOrNull()?.let { target ->
         TextButton(onClick = { onOpen(target) }) {
             Text("From gopass://" + opened.via.joinToString(" → gopass://"))
@@ -148,8 +155,9 @@ private fun EntryDetails(
     entry.otp?.let { uri -> Totp.parse(uri)?.let { OtpRow(it, onCopy = { code -> copy("One-time code", code) }) } }
     val otpField = entry.fields.firstOrNull { entry.otpUri == null && it.key.lowercase() in OTP_KEYS }
     entry.fields
-        .filterNot { it.value == entry.username || it == otpField }
-        .forEach { field ->
+        .filterNot {
+            it.value == entry.username || it == otpField || (loginMethod != null && it.key == LOGIN_METHOD)
+        }.forEach { field ->
             val target = field.reference
             if (target != null) {
                 ReferenceRow(field.key, target, onOpen = { onOpen(target) })
@@ -194,6 +202,22 @@ private fun SecretRow(
             }
             if (secret) TextButton(onClick = { revealed = !revealed }) { Text(if (revealed) "Hide" else "Show") }
             TextButton(onClick = onCopy) { Text("Copy") }
+        }
+    }
+}
+
+/** In place of the password of an account that has none: who it signs in through. */
+@Composable
+private fun SignInRow(method: String) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Password", style = MaterialTheme.typography.labelMedium)
+            Text(LoginMethods.signIn(method), style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "No password of its own (SSO / social login)",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -259,5 +283,6 @@ private fun OtpRow(
 }
 
 private const val MASK_LENGTH = 12
+private const val LOGIN_METHOD = "login-method"
 private val OTP_KEYS = setOf("totp", "otpauth")
 private const val TICK_MILLIS = 500L

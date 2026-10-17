@@ -53,6 +53,12 @@ class ListViewModel
 
         val icons: StateFlow<StoreIcons> = repository.icons
 
+        /** Commits waiting to be pushed, and why the last push failed. */
+        val syncStatus: StateFlow<PasswordRepository.SyncStatus> = repository.syncStatus
+
+        /** Login methods of passwordless entries already decrypted; nothing is decrypted for the list. */
+        val loginMethods: StateFlow<Map<String, String>> = repository.loginMethods
+
         fun setIcon(
             folder: String,
             icon: StoreIcons.Icon?,

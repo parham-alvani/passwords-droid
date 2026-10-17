@@ -39,6 +39,7 @@ import me.parham1995.passwords.MainActivity
 import me.parham1995.passwords.R
 import me.parham1995.passwords.data.PasswordRepository
 import me.parham1995.passwords.store.CredentialMatcher
+import me.parham1995.passwords.store.LoginMethods
 import java.util.UUID
 import javax.inject.Inject
 
@@ -112,10 +113,14 @@ class PasswordsAutofillService : AutofillService() {
 
         val datasets = mutableListOf<Dataset>()
         if (form.scenario.hasFieldsToFillOn(AutofillAction.Match)) {
+            val loginMethods = repository.loginMethods.value
             matches.forEach { match ->
                 val sender = AutofillActivity.fill(this, match.item.name, clientState, responseId)
+                // A passwordless entry this process has already decrypted says how it signs in.
+                val title =
+                    loginMethods[match.item.name]?.let { LoginMethods.suggestion(match.username, it) } ?: match.username
                 datasets +=
-                    dataset(form.scenario, AutofillAction.Match, sender, match.username, match.item.folder, nextSpec())
+                    dataset(form.scenario, AutofillAction.Match, sender, title, match.item.folder, nextSpec())
                 shown++
             }
         }

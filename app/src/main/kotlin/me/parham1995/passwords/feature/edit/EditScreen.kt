@@ -43,6 +43,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.parham1995.passwords.store.LoginMethods
 import me.parham1995.passwords.store.PassEntry
 import me.parham1995.passwords.unlock.UnlockPrompts
 
@@ -118,6 +119,10 @@ fun EditScreen(
                 value = form.password,
                 onValueChange = { v -> viewModel.edit { it.copy(password = v) } },
                 label = { Text("Password") },
+                supportingText =
+                    passwordlessVia(form)?.let { method ->
+                        { Text("Empty is fine: ${LoginMethods.signIn(method).replaceFirstChar { it.lowercase() }}") }
+                    },
                 textStyle = mono,
                 singleLine = true,
                 trailingIcon = {
@@ -240,3 +245,23 @@ private fun FieldRow(
         }
     }
 }
+
+/**
+ * The login method of an entry with no password of its own -- an SSO or
+ * social login, as gopass's template writes it -- while its password is
+ * empty: saving it that way is right, not a mistake.
+ */
+private fun passwordlessVia(form: EditViewModel.Form): String? =
+    if (form.password.isNotEmpty()) {
+        null
+    } else {
+        form.fields
+            .firstOrNull {
+                it.field.key
+                    .trim()
+                    .lowercase() == "login-method" &&
+                    it.field.value.isNotBlank()
+            }?.field
+            ?.value
+            ?.trim()
+    }

@@ -23,6 +23,7 @@ import androidx.credentials.exceptions.GetCredentialUnknownException
 import androidx.credentials.provider.PendingIntentHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
+import me.parham1995.passwords.store.LoginMethods
 import me.parham1995.passwords.ui.theme.PasswordsTheme
 import me.parham1995.passwords.unlock.UnlockPrompts
 
@@ -76,10 +77,19 @@ class CredentialActivity : ComponentActivity() {
         val creating = intent.getStringExtra(EXTRA_MODE) == MODE_CREATE
         when (outcome) {
             is CredentialViewModel.Outcome.Filled ->
-                PendingIntentHandler.setGetCredentialResponse(
-                    result,
-                    GetCredentialResponse(PasswordCredential(outcome.username, outcome.password)),
-                )
+                if (outcome.password.isEmpty()) {
+                    // A PasswordCredential cannot carry an empty password; an SSO
+                    // account has nothing to hand over here.
+                    val why =
+                        outcome.loginMethod?.let { LoginMethods.signIn(it) + "; there is no password to fill" }
+                            ?: "This entry has no password"
+                    PendingIntentHandler.setGetCredentialException(result, GetCredentialUnknownException(why))
+                } else {
+                    PendingIntentHandler.setGetCredentialResponse(
+                        result,
+                        GetCredentialResponse(PasswordCredential(outcome.username, outcome.password)),
+                    )
+                }
             CredentialViewModel.Outcome.Saved ->
                 PendingIntentHandler.setCreateCredentialResponse(
                     result,

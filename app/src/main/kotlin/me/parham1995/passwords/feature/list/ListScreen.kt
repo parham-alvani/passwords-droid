@@ -23,9 +23,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -52,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,6 +62,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.parham1995.passwords.R
+import me.parham1995.passwords.data.PasswordRepository
+import me.parham1995.passwords.store.LoginMethods
 import me.parham1995.passwords.store.PasswordStore
 import me.parham1995.passwords.store.StoreIcons
 import me.parham1995.passwords.store.StoreTree
@@ -79,6 +84,8 @@ fun ListScreen(
     val total by viewModel.total.collectAsStateWithLifecycle()
     val syncing by viewModel.syncing.collectAsStateWithLifecycle()
     val icons by viewModel.icons.collectAsStateWithLifecycle()
+    val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle()
+    val loginMethods by viewModel.loginMethods.collectAsStateWithLifecycle()
     var picking by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     var pickedFile by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
@@ -156,10 +163,18 @@ fun ListScreen(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     )
                 }
+                if (syncStatus.pending > 0 || syncStatus.error != null) {
+                    item(key = "sync") { SyncBanner(syncStatus, syncing, onRetry = viewModel::sync) }
+                }
                 when (val current = content) {
                     is ListViewModel.Content.Searching -> {
                         items(current.results, key = { "s:" + it.name }) { item ->
-                            EntryRow(item, showFolder = true, onClick = { onOpen(item.name) })
+                            EntryRow(
+                                item,
+                                showFolder = true,
+                                loginMethod = loginMethods[item.name],
+                                onClick = { onOpen(item.name) },
+                            )
                         }
                         if (current.results.isEmpty()) item(key = "none") { Empty("Nothing matches") }
                     }
@@ -180,7 +195,12 @@ fun ListScreen(
                             item(key = "divider") { HorizontalDivider(Modifier.padding(horizontal = 16.dp)) }
                         }
                         items(current.listing.entries, key = { "e:" + it.name }) { item ->
-                            EntryRow(item, showFolder = false, onClick = { onOpen(item.name) })
+                            EntryRow(
+                                item,
+                                showFolder = false,
+                                loginMethod = loginMethods[item.name],
+                                onClick = { onOpen(item.name) },
+                            )
                         }
                         if (current.listing.isEmpty) {
                             item(key = "none") {
@@ -299,6 +319,7 @@ private fun FolderRow(
 private fun EntryRow(
     item: PasswordStore.Item,
     showFolder: Boolean,
+    loginMethod: String?,
     onClick: () -> Unit,
 ) {
     ListItem(
@@ -308,6 +329,7 @@ private fun EntryRow(
                 listOfNotNull(
                     item.folder.takeIf { showFolder && it.isNotEmpty() },
                     item.aliasOf?.let { "alias of $it" },
+                    loginMethod?.let(LoginMethods::signIn),
                 )
             if (context.isNotEmpty()) {
                 Text(context.joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -316,6 +338,60 @@ private fun EntryRow(
         leadingContent = { Icon(Icons.Default.Lock, null) },
         modifier = Modifier.clickable(onClick = onClick),
     )
+}
+
+/**
+ * Where the store stands with its remote, when that needs saying: commits
+ * not pushed yet, the last push's error, or a conflict only a sync from
+ * Settings can sort out. Retry runs the same sync as pulling down.
+ */
+@Composable
+private fun SyncBanner(
+    status: PasswordRepository.SyncStatus,
+    syncing: Boolean,
+    onRetry: () -> Unit,
+) {
+    val waiting =
+        when (status.pending) {
+            0 -> null
+            1 -> "1 change waiting to push"
+            else -> "${status.pending} changes waiting to push"
+        }
+    val text =
+        when {
+            status.conflict -> "Conflict — sync from Settings"
+            else -> listOfNotNull(waiting, status.error).joinToString(" · ")
+        }
+    val color =
+        if (status.error !=
+            null
+        ) {
+            MaterialTheme.colorScheme.error
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (status.error != null) {
+            Icon(Icons.Default.Warning, contentDescription = "Sync problem", tint = color)
+        } else {
+            Icon(Icons.Default.Info, contentDescription = "Not pushed yet", tint = color)
+        }
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = color,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+        )
+        TextButton(onClick = onRetry, enabled = !syncing) { Text("Retry") }
+    }
 }
 
 @Composable
