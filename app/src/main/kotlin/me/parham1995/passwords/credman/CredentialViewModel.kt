@@ -12,11 +12,12 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.parham1995.passwords.crypto.PgpException
 import me.parham1995.passwords.data.BrokenReference
+import me.parham1995.passwords.data.CommitMessages
 import me.parham1995.passwords.data.MissingRecipients
 import me.parham1995.passwords.data.PasswordRepository
 import me.parham1995.passwords.store.CredentialMatcher
-import me.parham1995.passwords.store.PassEntry
 import me.parham1995.passwords.store.PasswordStore
+import me.parham1995.passwords.store.SavePlanner
 import me.parham1995.passwords.store.Search
 import me.parham1995.passwords.store.Totp
 import me.parham1995.passwords.unlock.Unlocker
@@ -94,6 +95,10 @@ class CredentialViewModel
         }
 
         override fun onUnlocked(passphrase: CharArray?) {
+            if (updating != null) {
+                viewModelScope.launch { finishUpdate(passphrase) }
+                return
+            }
             val name = chosen ?: return
             viewModelScope.launch {
                 _outcome.value =
@@ -127,63 +132,104 @@ class CredentialViewModel
         }
 
         override fun onUnlockFailed(message: String) {
+            if (updating != null) {
+                // Back to the save dialog; a dismissed prompt is not a failed save.
+                updating = null
+                if (message != "Locked") _outcome.value = Outcome.Failed(message)
+                return
+            }
             _outcome.value = if (message == "Locked") Outcome.Cancelled else Outcome.Failed(message)
         }
 
-        /**
-         * Where a login offered by [target] should go: next to the site's
-         * existing accounts when it has any, otherwise in a folder named after
-         * the site.
-         */
-        fun suggestName(
+        private val _plan = MutableStateFlow<SavePlanner.Plan?>(null)
+
+        /** What saving the offered login would do: update an entry the store has, or add one. */
+        val plan: StateFlow<SavePlanner.Plan?> = _plan.asStateFlow()
+
+        /** The entry whose password is being replaced, and the new password, while it is unlocked. */
+        private var updating: Pair<String, String>? = null
+
+        fun planSave(
             target: CredentialMatcher.Target?,
             id: String,
-        ): String {
-            val account = id.ifBlank { "login" }.replace('/', '_')
-            val existing = target?.let { CredentialMatcher.find(repository.items.value, it).firstOrNull() }
-            if (existing != null) return existing.item.folder + "/" + account
-            val site =
-                when (target) {
-                    is CredentialMatcher.Target.Web ->
-                        target.host
-                            .substringAfter(
-                                "://",
-                            ).substringBefore('/')
-                            .removePrefix("www.")
-                    is CredentialMatcher.Target.App -> target.packageName
-                    null -> "unsorted"
-                }
-            return "$site/$account"
+            password: String,
+        ) {
+            if (_plan.value != null) return
+            viewModelScope.launch {
+                if (repository.items.value.isEmpty()) repository.refresh()
+                _plan.value =
+                    SavePlanner.plan(repository.items.value, target, id, password, repository.createTemplates())
+            }
         }
 
-        fun save(
+        /** Adds the offered login as a new entry called [name]. */
+        fun create(
             name: String,
-            id: String,
-            password: String,
-            url: String?,
+            text: String,
         ) = viewModelScope.launch {
+            val clean = name.trim().trim('/')
+            if (repository.exists(clean)) {
+                // A name the store has: replace only its password, never the whole entry.
+                _plan.value = _plan.value?.copy(update = clean)
+                return@launch
+            }
             _saving.value = true
-            val fields =
-                buildList {
-                    if (id.isNotBlank()) add(PassEntry.Field("login", id))
-                    url?.let { add(PassEntry.Field("url", it)) }
-                }
             _outcome.value =
-                runCatching { repository.save(name.trim().trim('/'), PassEntry(password, fields, null, "")) }.fold(
-                    onSuccess = { Outcome.Saved },
-                    onFailure = { e ->
-                        Outcome.Failed(
-                            if (e is MissingRecipients) {
-                                "No public key for ${e.ids.joinToString()}"
-                            } else {
-                                e.message
-                                    ?: "Could not save"
-                            },
-                        )
-                    },
-                )
+                try {
+                    repository.saveText(clean, text, CommitMessages.insert(clean))
+                    Outcome.Saved
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Outcome.Failed(saveFailure(e))
+                }
             _saving.value = false
         }
+
+        /**
+         * Replaces the password of [name] with [password], keeping every other
+         * line of it. Decrypting it needs an unlock, so this asks for one first.
+         */
+        fun update(
+            name: String,
+            password: String,
+        ) {
+            if (updating != null) return
+            updating = name to password
+            unlock(name)
+        }
+
+        private suspend fun finishUpdate(passphrase: CharArray?) {
+            val (name, password) = updating ?: return
+            _saving.value = true
+            _outcome.value =
+                try {
+                    val entry = repository.open(name, passphrase)
+                    when {
+                        entry.reference != null ->
+                            Outcome.Failed("$name takes its password from ${entry.reference}; update that entry")
+                        entry.password == password -> Outcome.Saved
+                        else -> {
+                            repository.save(name, entry.copy(password = password), previousName = name)
+                            Outcome.Saved
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Outcome.Failed(saveFailure(e))
+                } finally {
+                    passphrase?.fill('\u0000')
+                }
+            _saving.value = false
+        }
+
+        private fun saveFailure(e: Exception): String =
+            when (e) {
+                is MissingRecipients -> "No public key for ${e.ids.joinToString()}"
+                is PgpException -> e.message ?: "Could not decrypt"
+                else -> e.message ?: "Could not save"
+            }
 
         fun cancel() {
             _outcome.value = Outcome.Cancelled

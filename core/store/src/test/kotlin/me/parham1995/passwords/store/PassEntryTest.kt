@@ -434,4 +434,13 @@ class PassEntryTest {
         assertThat(parsed.hashCode())
             .isEqualTo(PassEntry("pw", listOf(PassEntry.Field("login", "me")), null, "").hashCode())
     }
+
+    @Test
+    fun `a new password changes only the first line`() {
+        val kv = "old\nfree text\nlogin: me\ntotp: JBSWY3DPEHPK3PXP\nrecovery codes: a b c\n"
+        assertThat(PassEntry.parse(kv).copy(password = "new").format()).isEqualTo("new" + kv.removePrefix("old"))
+
+        val yaml = "old\nnote\n---\nusername: me\nkey: |-\n  a\n  b\n"
+        assertThat(PassEntry.parse(yaml).copy(password = "new").format()).isEqualTo("new" + yaml.removePrefix("old"))
+    }
 }
