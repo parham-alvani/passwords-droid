@@ -267,4 +267,28 @@ class CreateWizardTest {
         assertThat(CreateWizard.cleanFilename(" _a/b c_ ")).isEqualTo("a_b_c")
         assertThat(CreateWizard.cleanFilename("پرهام")).isEqualTo("")
     }
+
+    @Test
+    fun `the name shows as it is typed and matches what create gives`() {
+        val website = CreateWizard.defaults[0]
+        assertThat(CreateWizard.nameOf(website, emptyMap())).isNull()
+        assertThat(CreateWizard.nameOf(website, mapOf("url" to Answer.Text("https://github.com/login"))))
+            .isEqualTo("websites/github.com")
+        val answers =
+            mapOf(
+                "url" to Answer.Text("https://github.com/login"),
+                "username" to Answer.Text("me@x.com"),
+                "password" to Answer.Text("hunter2"),
+            )
+        assertThat(CreateWizard.nameOf(website, answers)).isEqualTo(CreateWizard.create(website, answers).name)
+
+        val sso = CreateWizard.defaults[2]
+        val ssoAnswers =
+            mapOf(
+                "url" to Answer.Text("x.com"),
+                "username" to Answer.Text("me"),
+                "login-method" to Answer.Text("google"),
+            )
+        assertThat(CreateWizard.nameOf(sso, ssoAnswers)).isEqualTo("websites/x.com/me")
+    }
 }

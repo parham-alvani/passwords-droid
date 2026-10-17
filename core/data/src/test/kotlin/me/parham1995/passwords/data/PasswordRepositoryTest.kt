@@ -361,6 +361,56 @@ class PasswordRepositoryTest {
         }
 
     @Test
+    fun `passwordless accounts are not scored, and their login method is remembered in memory`() =
+        runTest {
+            val repo = repository()
+            repo.sync()
+            repo.saveText(
+                "websites/x.com/me",
+                "\nurl: x.com\nusername: me\nlogin-method: google\n",
+                CommitMessages.create("websites/x.com/me"),
+            )
+            assertThat(originMessages(1)).containsExactly("Save secret websites/x.com/me: Create new entry")
+            assertThat(repo.loginMethods.value).containsExactly("websites/x.com/me", "google")
+
+            val candidates = repo.healthCandidates("pass".toCharArray())
+            assertThat(candidates.map { it.name }).containsExactly("github.com/parham")
+
+            repo.delete("websites/x.com/me")
+            assertThat(repo.loginMethods.value).isEmpty()
+            repo.open("github.com/parham", "pass".toCharArray())
+            assertThat(repo.loginMethods.value).isEmpty()
+        }
+
+    @Test
+    fun `wizard templates come from the store, or gopass's defaults`() =
+        runTest {
+            val repo = repository()
+            repo.sync()
+            assertThat(repo.createTemplates().map { it.name }).hasSize(3)
+            File(workTree, ".gopass/create/card.yml")
+                .apply { parentFile?.mkdirs() }
+                .writeText("name: Card\nprefix: cards\nname_from: [bank]\nattributes:\n- name: bank\n  type: string\n")
+            assertThat(repo.createTemplates().map { it.name }).containsExactly("Card")
+        }
+
+    @Test
+    fun `an empty password is never sent to the breach check`() =
+        runTest {
+            val asked = mutableListOf<String>()
+            val counts =
+                repository().pwned(
+                    listOf(PasswordHealth.Candidate("sso", "", null)),
+                    PwnedClient { prefix ->
+                        asked += prefix
+                        ""
+                    },
+                )
+            assertThat(counts).isEmpty()
+            assertThat(asked).isEmpty()
+        }
+
+    @Test
     fun `the breach check sends only hash prefixes`() =
         runTest {
             val asked = mutableListOf<String>()

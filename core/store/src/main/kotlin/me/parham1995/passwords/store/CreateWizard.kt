@@ -274,6 +274,35 @@ object CreateWizard {
         return Created(name(template.prefix, nameParts), secret.text(), password, generated)
     }
 
+    /**
+     * The name [create] would give the entry with these [answers], or null
+     * while there is nothing to name it after -- for showing the name as it
+     * is typed, before every answer is valid. Same rules as [create]: the
+     * prefix, then each [Template.nameFrom] answer made filename-safe, a
+     * hostname as its bare host.
+     */
+    fun nameOf(
+        template: Template,
+        answers: Map<String, Answer>,
+    ): String? {
+        val forName = template.nameFrom.toSet()
+        val parts =
+            template.attributes
+                .filter { it.name in forName && it.type in NAMING_TYPES }
+                .map { attribute ->
+                    val value = text(answers[attribute.name])
+                    if (attribute.type == Attribute.HOSTNAME) extractHostname(value) else value
+                }
+        return try {
+            name(template.prefix, parts)
+        } catch (_: InvalidAnswer) {
+            null
+        }
+    }
+
+    /** The attribute types whose answers can name an entry. */
+    private val NAMING_TYPES = setOf(Attribute.STRING, Attribute.CHOICE, Attribute.HOSTNAME)
+
     private fun text(answer: Answer?): String =
         when (answer) {
             is Answer.Text -> answer.value

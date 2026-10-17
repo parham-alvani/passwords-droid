@@ -7,6 +7,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -15,6 +16,7 @@ import kotlinx.coroutines.withContext
 import me.parham1995.passwords.crypto.PgpCrypto
 import me.parham1995.passwords.data.git.StoreGit
 import me.parham1995.passwords.data.git.SyncConflict
+import me.parham1995.passwords.store.CreateWizard
 import me.parham1995.passwords.store.Documents
 import me.parham1995.passwords.store.PassEntry
 import me.parham1995.passwords.store.PasswordHealth
@@ -65,6 +67,28 @@ class PasswordRepository(
     /** Whether changes are waiting to be pushed, and why the last attempt failed. */
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
 
+    private val _loginMethods = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    /**
+     * The `login-method` of every passwordless entry (see
+     * [PassEntry.isPasswordless]) decrypted or saved since the app started,
+     * by name. Lets autofill label a suggestion "me@x.com · Google" and the
+     * list show a hint without decrypting anything more. Kept in memory
+     * only; nothing read from an entry is written to disk.
+     */
+    val loginMethods: StateFlow<Map<String, String>> = _loginMethods.asStateFlow()
+
+    private fun learn(
+        name: String,
+        entry: PassEntry,
+    ) {
+        val method = entry.loginMethod?.takeIf { entry.isPasswordless }
+        if (_loginMethods.value[name] == method) return
+        _loginMethods.update { if (method == null) it - name else it + (name to method) }
+    }
+
+    private fun forget(name: String) = _loginMethods.update { it - name }
+
     private val iconsFile get() = File(store.root, StoreIcons.FILE)
 
     suspend fun refresh() =
@@ -110,7 +134,7 @@ class PasswordRepository(
     suspend fun open(
         name: String,
         passphrase: CharArray?,
-    ): PassEntry = PassEntry.parse(openText(name, passphrase))
+    ): PassEntry = PassEntry.parse(openText(name, passphrase)).also { learn(name, it) }
 
     /** The entry's decrypted text, exactly as stored. */
     suspend fun openText(
@@ -139,6 +163,7 @@ class PasswordRepository(
     ): Opened {
         val text = openText(name, passphrase)
         val entry = PassEntry.parse(text)
+        learn(name, entry)
         val document = Documents.of(name, text)
         val chain = mutableListOf(name)
         var target = entry
@@ -195,6 +220,13 @@ class PasswordRepository(
         message: String? = null,
     ) = lock.withLock { writeText(name, text, null, message, generated = false) }
 
+    /**
+     * The `gopass create` wizard templates: the store's `.yml` files in `.gopass/create`,
+     * or gopass's defaults when it has none that read.
+     */
+    suspend fun createTemplates(): List<CreateWizard.Template> =
+        withContext(Dispatchers.IO) { CreateWizard.load(store.root) }
+
     /** New entries in a folder with a `.pass-template` are shaped by it, as with `gopass generate`. */
     suspend fun templateFor(name: String): String? = withContext(Dispatchers.IO) { Templates.find(store.root, name) }
 
@@ -233,6 +265,8 @@ class PasswordRepository(
             val paths = listOfNotNull(relative(real), previousReal?.takeIf { renamed }?.let(::relative))
             commitAndPush(commitMessage, paths)
         }
+        previousName?.takeIf { it != name }?.let(::forget)
+        learn(name, PassEntry.parse(text))
         refresh()
     }
 
@@ -468,13 +502,15 @@ class PasswordRepository(
                 Files.delete(File(store.root, relative(own)).toPath())
                 commitAndPush(CommitMessages.remove(name), listOf(relative(own)))
             }
+            forget(name)
             refresh()
         }
 
     /**
      * Every login's password, for the health check: decrypted a few at a time
-     * off the main thread, with documents and gopass references left out
-     * because they are not passwords to score. [onProgress] reports how many
+     * off the main thread, with documents, gopass references and passwordless
+     * (SSO, social login) accounts left out because they are not passwords
+     * to score. [onProgress] reports how many
      * of how many are done. The caller must not keep the result.
      */
     suspend fun healthCandidates(
@@ -496,7 +532,11 @@ class PasswordRepository(
                                     val plain = crypto.decrypt(bytes, keyRing.secretKeys(), passphrase)
                                     val text = String(plain, Charsets.UTF_8).also { plain.fill(0) }
                                     val entry = PassEntry.parse(text)
-                                    if (Documents.of(name, text) != null || entry.reference != null) {
+                                    learn(name, entry)
+                                    if (Documents.of(name, text) != null ||
+                                        entry.reference != null ||
+                                        entry.isPasswordless
+                                    ) {
                                         null
                                     } else {
                                         PasswordHealth.Candidate(name, entry.password, changed[relative(name)])
@@ -520,7 +560,9 @@ class PasswordRepository(
         client: PwnedClient = PwnedClient.HIBP,
     ): Map<String, Int> =
         withContext(Dispatchers.IO) {
-            val hashes = candidates.associate { it.name to Pwned.sha1(it.password) }
+            // An empty password is no account's password: never ask about it.
+            val hashes =
+                candidates.filter { it.password.isNotBlank() }.associate { it.name to Pwned.sha1(it.password) }
             val ranges =
                 hashes.values
                     .map { it.take(Pwned.PREFIX_LENGTH) }
