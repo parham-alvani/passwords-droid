@@ -157,7 +157,10 @@ fun SettingsScreen(
 
             Section("Git") {
                 Text(settings.remoteUrl, fontFamily = FontFamily.Monospace)
-                Text("Branch ${settings.branch} · commits as ${settings.authorName.ifBlank { "passwords-droid" }}")
+                Text("Branch ${settings.branch}")
+                GitAuthor(
+                    settings,
+                ) { name, email -> viewModel.update { it.copy(authorName = name, authorEmail = email) } }
                 HorizontalDivider()
                 Text("SSH deploy key", style = MaterialTheme.typography.labelLarge)
                 viewModel.sshFingerprint?.let {
