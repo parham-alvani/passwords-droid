@@ -41,6 +41,11 @@
             android:exported="false"
             android:theme="@style/Theme.Passwords.Translucent" />
 
+        <!-- Clears a copied secret once its time is up, even after the process died. -->
+        <receiver
+            android:name=".ui.ClipboardExpiry"
+            android:exported="false" />
+
         <!--
             Classic autofill, for Chrome's "Autofill using another service" and
             apps that do not use Credential Manager. Picking this app as the

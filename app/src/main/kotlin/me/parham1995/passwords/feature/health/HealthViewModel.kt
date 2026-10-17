@@ -2,6 +2,7 @@ package me.parham1995.passwords.feature.health
 
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -71,6 +72,8 @@ class HealthViewModel
                     }
                     // `candidates` goes out of scope here; nothing keeps a password.
                     _state.value = State.Done(report, pwned, pwnedError)
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     _state.value = State.Failed(e.message ?: "Could not check")
                 } finally {

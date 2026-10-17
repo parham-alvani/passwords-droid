@@ -2,10 +2,10 @@ package me.parham1995.passwords.unlock
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -117,7 +117,7 @@ abstract class UnlockingViewModel(
 
 @Composable
 fun UnlockPrompts(viewModel: UnlockingViewModel) {
-    val prompt by viewModel.prompt.collectAsState()
+    val prompt by viewModel.prompt.collectAsStateWithLifecycle()
     val context = LocalContext.current
     when (val current = prompt) {
         null -> Unit

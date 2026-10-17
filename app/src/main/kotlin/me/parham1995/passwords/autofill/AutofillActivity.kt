@@ -13,8 +13,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.androidpasswordstore.autofillparser.AutofillAction
 import com.github.androidpasswordstore.autofillparser.AutofillScenario
 import com.github.androidpasswordstore.autofillparser.Credentials
@@ -43,9 +43,21 @@ class AutofillActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         val mode = intent.getStringExtra(EXTRA_MODE)
+        val offered =
+            if (mode == MODE_SAVE) {
+                viewModel.offered
+                    ?: intent
+                        .getStringExtra(EXTRA_OFFER)
+                        ?.let(SaveOffers::take)
+                        ?.let { offer ->
+                            (offer.username.concatToString() to offer.password.concatToString()).also { offer.wipe() }
+                        }.also { viewModel.offered = it }
+            } else {
+                null
+            }
         setContent {
             PasswordsTheme {
-                val outcome by viewModel.outcome.collectAsState()
+                val outcome by viewModel.outcome.collectAsStateWithLifecycle()
                 LaunchedEffect(outcome) { outcome?.let(::finishWith) }
                 UnlockPrompts(viewModel)
                 when (mode) {
@@ -53,12 +65,12 @@ class AutofillActivity : ComponentActivity() {
                     MODE_SEARCH -> SearchDialog(viewModel)
                     MODE_SAVE -> {
                         val origin = intent.getBundleExtra(EXTRA_ORIGIN)?.let { FormOrigin.fromBundle(it) }
-                        SaveDialog(
-                            viewModel,
-                            origin?.toTarget(),
-                            intent.getStringExtra(EXTRA_USERNAME).orEmpty(),
-                            intent.getStringExtra(EXTRA_PASSWORD).orEmpty(),
-                        )
+                        if (offered == null) {
+                            // Already taken, gone stale, or lost with a restarted process.
+                            LaunchedEffect(Unit) { viewModel.cancel() }
+                        } else {
+                            SaveDialog(viewModel, origin?.toTarget(), offered.first, offered.second)
+                        }
                     }
                     else -> LaunchedEffect(Unit) { viewModel.cancel() }
                 }
@@ -104,25 +116,28 @@ class AutofillActivity : ComponentActivity() {
         private const val EXTRA_MODE = "mode"
         private const val EXTRA_NAME = "name"
         private const val EXTRA_ORIGIN = "origin"
-        private const val EXTRA_USERNAME = "username"
-        private const val EXTRA_PASSWORD = "password"
+        private const val EXTRA_OFFER = "offer"
         private const val MODE_FILL = "fill"
         private const val MODE_SEARCH = "search"
         private const val MODE_SAVE = "save"
 
-        private var requestCode = 0
-
+        /**
+         * Each sender is told apart by its intent's identifier, never a request
+         * code: [identifier] is unique per dataset and per fill response, so no
+         * new sender replaces or cancels one an earlier response still shows.
+         */
         private fun sender(
             context: Context,
             intent: Intent,
+            identifier: String,
         ): IntentSender =
             PendingIntent
                 .getActivity(
                     context,
-                    requestCode++,
-                    intent,
+                    0,
+                    intent.setIdentifier(identifier),
                     // Mutable: autofill adds the client state before launching it.
-                    PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_MUTABLE,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
                 ).intentSender
 
         private fun intent(
@@ -130,10 +145,12 @@ class AutofillActivity : ComponentActivity() {
             mode: String,
         ) = Intent(context, AutofillActivity::class.java).putExtra(EXTRA_MODE, mode)
 
+        /** [response] is unique per fill response, so its senders never collide with an earlier one's. */
         fun fill(
             context: Context,
             name: String,
             clientState: Bundle,
+            response: String,
         ): IntentSender =
             sender(
                 context,
@@ -141,27 +158,38 @@ class AutofillActivity : ComponentActivity() {
                     context,
                     MODE_FILL,
                 ).putExtra(EXTRA_NAME, name).putExtra(AutofillManager.EXTRA_CLIENT_STATE, clientState),
+                "$MODE_FILL:$response:$name",
             )
 
         fun search(
             context: Context,
             clientState: Bundle,
-        ): IntentSender =
-            sender(context, intent(context, MODE_SEARCH).putExtra(AutofillManager.EXTRA_CLIENT_STATE, clientState))
-
-        /** The typed values travel in the intent only until the dialog encrypts them. */
-        fun save(
-            context: Context,
-            origin: FormOrigin,
-            username: String,
-            password: String,
+            response: String,
         ): IntentSender =
             sender(
                 context,
+                intent(context, MODE_SEARCH).putExtra(AutofillManager.EXTRA_CLIENT_STATE, clientState),
+                "$MODE_SEARCH:$response",
+            )
+
+        /**
+         * The typed values stay in this process ([SaveOffers]); the intent
+         * carries only the token that finds them, once.
+         */
+        fun save(
+            context: Context,
+            origin: FormOrigin,
+            username: CharArray,
+            password: CharArray,
+        ): IntentSender {
+            val token = SaveOffers.put(username, password)
+            return sender(
+                context,
                 intent(context, MODE_SAVE)
                     .putExtra(EXTRA_ORIGIN, origin.toBundle())
-                    .putExtra(EXTRA_USERNAME, username)
-                    .putExtra(EXTRA_PASSWORD, password),
+                    .putExtra(EXTRA_OFFER, token),
+                "$MODE_SAVE:$token",
             )
+        }
     }
 }

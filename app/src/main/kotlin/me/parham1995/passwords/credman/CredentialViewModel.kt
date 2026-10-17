@@ -2,6 +2,7 @@ package me.parham1995.passwords.credman
 
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -65,6 +66,13 @@ class CredentialViewModel
 
         private var chosen: String? = null
 
+        /**
+         * The username and password an autofill save request offered, taken
+         * from [me.parham1995.passwords.autofill.SaveOffers] once and kept here
+         * so a rotated dialog still has them.
+         */
+        var offered: Pair<String, String>? = null
+
         init {
             viewModelScope.launch { if (repository.items.value.isEmpty()) repository.refresh() }
         }
@@ -94,10 +102,15 @@ class CredentialViewModel
                                 ?.let(Totp::parse)
                                 ?.code(System.currentTimeMillis())
                         Outcome.Filled(username, opened.password, otp)
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: PgpException) {
                         Outcome.Failed(e.message ?: "Could not decrypt")
                     } catch (e: BrokenReference) {
                         Outcome.Failed(e.message ?: "Broken reference")
+                    } catch (e: Exception) {
+                        // An entry a sync removed, an unreadable file: the asking app still needs an answer.
+                        Outcome.Failed(e.message ?: "Could not open $name")
                     } finally {
                         passphrase?.fill('\u0000')
                     }

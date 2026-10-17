@@ -24,7 +24,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.parham1995.passwords.unlock.UnlockPrompts
 import java.time.Instant
 import java.time.ZoneId
@@ -46,9 +46,9 @@ fun HistoryScreen(
     viewModel: HistoryViewModel =
         hiltViewModel<HistoryViewModel, HistoryViewModel.Factory>(key = "history:$name") { it.create(name) },
 ) {
-    val revisions by viewModel.revisions.collectAsState()
-    val viewing by viewModel.viewing.collectAsState()
-    val restored by viewModel.restored.collectAsState()
+    val revisions by viewModel.revisions.collectAsStateWithLifecycle()
+    val viewing by viewModel.viewing.collectAsStateWithLifecycle()
+    val restored by viewModel.restored.collectAsStateWithLifecycle()
     LaunchedEffect(restored) { if (restored) onBack() }
     UnlockPrompts(viewModel)
 

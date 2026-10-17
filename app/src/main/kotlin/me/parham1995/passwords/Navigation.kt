@@ -1,11 +1,11 @@
 package me.parham1995.passwords
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -74,7 +74,7 @@ class StartViewModel
 @Composable
 fun PasswordsNavHost() {
     val start: StartViewModel = hiltViewModel()
-    val configured by start.configured.collectAsState()
+    val configured by start.configured.collectAsStateWithLifecycle()
     // Wait for settings, so a configured app never flashes the setup screen.
     val ready = configured ?: return
     // Decided once. Setup saves the settings before it clones, and a start

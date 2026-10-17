@@ -19,3 +19,12 @@
 # BouncyCastle registers algorithms by class name through its provider tables.
 -keep class org.bouncycastle.** { *; }
 -dontwarn org.bouncycastle.**
+
+# Release builds keep only warnings and errors. The verbose, debug and info
+# lines name the apps and sites that asked for a fill, which is nobody's
+# business once the app ships.
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+}

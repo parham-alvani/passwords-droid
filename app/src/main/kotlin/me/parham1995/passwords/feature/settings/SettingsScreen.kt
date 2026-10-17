@@ -32,7 +32,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.parham1995.passwords.BuildConfig
 import me.parham1995.passwords.feature.keys.BackupCodeDialog
 
@@ -54,10 +54,10 @@ fun SettingsScreen(
     onRecipients: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
-    val settings by viewModel.settings.collectAsState()
-    val keys by viewModel.keys.collectAsState()
-    val message by viewModel.message.collectAsState()
-    val askBackupCode by viewModel.askBackupCode.collectAsState()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val keys by viewModel.keys.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
+    val askBackupCode by viewModel.askBackupCode.collectAsStateWithLifecycle()
     var confirmReset by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val pickKey =

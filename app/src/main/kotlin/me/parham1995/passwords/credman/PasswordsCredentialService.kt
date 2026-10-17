@@ -84,7 +84,7 @@ class PasswordsCredentialService : CredentialProviderService() {
         }
         // Who asked and how many names matched -- never a secret, and it is
         // the only way to tell "not asked" from "asked, matched nothing".
-        Log.i(TAG, "request from ${caller?.packageName} as $target: ${entries.size} entries")
+        Log.d(TAG, "request from ${caller?.packageName} as $target: ${entries.size} entries")
         val search = Action.Builder(getString(R.string.credman_search), CredentialActivity.search(this)).build()
         return BeginGetCredentialResponse
             .Builder()
@@ -123,7 +123,10 @@ class PasswordsCredentialService : CredentialProviderService() {
     internal companion object {
         private const val TAG = "PasswordsCredman"
 
-        /** One request code per entry name, so each entry's PendingIntent is its own. */
+        /**
+         * One PendingIntent per [key], told apart by the intent's identifier
+         * rather than a request code -- two names with one hash would share one.
+         */
         fun pending(
             service: android.content.Context,
             intent: Intent,
@@ -131,8 +134,8 @@ class PasswordsCredentialService : CredentialProviderService() {
         ): PendingIntent =
             PendingIntent.getActivity(
                 service,
-                key.hashCode(),
-                intent,
+                0,
+                intent.setIdentifier(key),
                 // Mutable: the system writes the request into it before launching.
                 PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )

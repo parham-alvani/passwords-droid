@@ -44,7 +44,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +57,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.parham1995.passwords.R
 import me.parham1995.passwords.store.PasswordStore
 import me.parham1995.passwords.store.StoreIcons
@@ -73,12 +73,12 @@ fun ListScreen(
     onSettings: () -> Unit,
     viewModel: ListViewModel = hiltViewModel(),
 ) {
-    val content by viewModel.content.collectAsState()
-    val query by viewModel.query.collectAsState()
-    val folder by viewModel.folder.collectAsState()
-    val total by viewModel.total.collectAsState()
-    val syncing by viewModel.syncing.collectAsState()
-    val icons by viewModel.icons.collectAsState()
+    val content by viewModel.content.collectAsStateWithLifecycle()
+    val query by viewModel.query.collectAsStateWithLifecycle()
+    val folder by viewModel.folder.collectAsStateWithLifecycle()
+    val total by viewModel.total.collectAsStateWithLifecycle()
+    val syncing by viewModel.syncing.collectAsStateWithLifecycle()
+    val icons by viewModel.icons.collectAsStateWithLifecycle()
     var picking by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     var pickedFile by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
@@ -90,7 +90,7 @@ fun ListScreen(
                 if (bytes != null && bytes.size <= MAX_FILE_BYTES) pickedFile = fileName to bytes
             }
         }
-    val message by viewModel.message.collectAsState()
+    val message by viewModel.message.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(message) {
         message?.let {

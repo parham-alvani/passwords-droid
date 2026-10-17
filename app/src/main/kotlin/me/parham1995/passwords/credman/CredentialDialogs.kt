@@ -20,7 +20,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.parham1995.passwords.store.CredentialMatcher
 
 /*
@@ -37,8 +37,8 @@ import me.parham1995.passwords.store.CredentialMatcher
 
 @Composable
 internal fun SearchDialog(viewModel: CredentialViewModel) {
-    val query by viewModel.query.collectAsState()
-    val results by viewModel.results.collectAsState()
+    val query by viewModel.query.collectAsStateWithLifecycle()
+    val results by viewModel.results.collectAsStateWithLifecycle()
     var picked by remember { mutableStateOf(false) }
     if (picked) return
     AlertDialog(
@@ -92,7 +92,7 @@ internal fun SaveDialog(
     id: String,
     password: String,
 ) {
-    val saving by viewModel.saving.collectAsState()
+    val saving by viewModel.saving.collectAsStateWithLifecycle()
     var name by remember { mutableStateOf(viewModel.suggestName(target, id)) }
     val url = (target as? CredentialMatcher.Target.Web)?.host?.let { if ("://" in it) it else "https://$it" }
     AlertDialog(

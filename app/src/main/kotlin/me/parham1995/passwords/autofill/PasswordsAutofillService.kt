@@ -39,6 +39,7 @@ import me.parham1995.passwords.MainActivity
 import me.parham1995.passwords.R
 import me.parham1995.passwords.data.PasswordRepository
 import me.parham1995.passwords.store.CredentialMatcher
+import java.util.UUID
 import javax.inject.Inject
 
 /**
@@ -81,7 +82,7 @@ class PasswordsAutofillService : AutofillService() {
             scope.launch {
                 if (repository.items.value.isEmpty()) repository.refresh()
                 val matches = CredentialMatcher.find(repository.items.value, form.formOrigin.toTarget())
-                Log.i(TAG, "fill request from ${form.formOrigin}: ${matches.size} entries")
+                Log.d(TAG, "fill request from ${form.formOrigin}: ${matches.size} entries")
                 callback.onSuccess(response(form, matches, request))
             }
         cancellationSignal.setOnCancelListener { job.cancel() }
@@ -93,6 +94,8 @@ class PasswordsAutofillService : AutofillService() {
         request: FillRequest,
     ): FillResponse? {
         val clientState = form.toClientState()
+        // Tells this response's senders apart from every earlier response's.
+        val responseId = UUID.randomUUID().toString()
         val inline = request.inlineSuggestionsRequest
         val specs = inline?.inlinePresentationSpecs.orEmpty()
         val maxInline = inline?.maxSuggestionCount ?: 0
@@ -110,14 +113,14 @@ class PasswordsAutofillService : AutofillService() {
         val datasets = mutableListOf<Dataset>()
         if (form.scenario.hasFieldsToFillOn(AutofillAction.Match)) {
             matches.forEach { match ->
-                val sender = AutofillActivity.fill(this, match.item.name, clientState)
+                val sender = AutofillActivity.fill(this, match.item.name, clientState, responseId)
                 datasets +=
                     dataset(form.scenario, AutofillAction.Match, sender, match.username, match.item.folder, nextSpec())
                 shown++
             }
         }
         if (form.scenario.hasFieldsToFillOn(AutofillAction.Search)) {
-            val sender = AutofillActivity.search(this, clientState)
+            val sender = AutofillActivity.search(this, clientState, responseId)
             datasets +=
                 dataset(
                     form.scenario,
@@ -219,8 +222,9 @@ class PasswordsAutofillService : AutofillService() {
             callback.onFailure(getString(R.string.autofill_save_unsupported))
             return
         }
-        val username = scenario.usernameValue?.concatToString().orEmpty()
-        callback.onSuccess(AutofillActivity.save(this, origin, username, password.concatToString()))
+        val username = scenario.usernameValue ?: CharArray(0)
+        callback.onSuccess(AutofillActivity.save(this, origin, username, password))
+        username.fill('\u0000')
         password.fill('\u0000')
     }
 

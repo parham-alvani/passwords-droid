@@ -31,7 +31,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +42,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.parham1995.passwords.store.PassEntry
 import me.parham1995.passwords.unlock.UnlockPrompts
 
@@ -56,9 +56,10 @@ fun EditScreen(
     viewModel: EditViewModel =
         hiltViewModel<EditViewModel, EditViewModel.Factory>(key = "edit:$name") { it.create(name, folder) },
 ) {
-    val form by viewModel.form.collectAsState()
-    val done by viewModel.done.collectAsState()
-    val deleted by viewModel.deleted.collectAsState()
+    val form by viewModel.form.collectAsStateWithLifecycle()
+    val done by viewModel.done.collectAsStateWithLifecycle()
+    val deleted by viewModel.deleted.collectAsStateWithLifecycle()
+    val template by viewModel.template.collectAsStateWithLifecycle()
     var confirmDelete by remember { mutableStateOf(false) }
     LaunchedEffect(done) { done?.let(onDone) }
     LaunchedEffect(deleted) { if (deleted) onDeleted() }
@@ -97,7 +98,7 @@ fun EditScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             form.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            viewModel.template()?.let {
+            template?.let {
                 Text(
                     "This folder has a .pass-template: leave the other fields empty and it fills them, as gopass generate does.",
                     style = MaterialTheme.typography.bodySmall,

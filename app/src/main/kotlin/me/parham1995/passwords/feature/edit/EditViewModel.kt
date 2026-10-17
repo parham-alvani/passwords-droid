@@ -5,11 +5,20 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.parham1995.passwords.crypto.PgpException
 import me.parham1995.passwords.data.MissingRecipients
 import me.parham1995.passwords.data.PasswordRepository
@@ -60,6 +69,26 @@ class EditViewModel
             )
         val form: StateFlow<Form> = _form.asStateFlow()
 
+        /**
+         * The `.pass-template` a new entry with the current name would get, if
+         * any. Looked up off the main thread once typing pauses, not per keystroke.
+         */
+        @OptIn(FlowPreview::class)
+        val template: StateFlow<String?> =
+            _form
+                .map { it.name.trim().trim('/') }
+                .distinctUntilChanged()
+                .debounce(TEMPLATE_DEBOUNCE_MILLIS)
+                .map { name ->
+                    if (original != null ||
+                        name.isEmpty()
+                    ) {
+                        null
+                    } else {
+                        withContext(Dispatchers.IO) { repository.templateFor(name) }
+                    }
+                }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), null)
+
         private val _done = MutableStateFlow<String?>(null)
 
         /** The saved name, once saved. */
@@ -84,20 +113,6 @@ class EditViewModel
         }
 
         fun edit(transform: (Form) -> Form) = _form.update { transform(it).copy(error = null) }
-
-        /** The `.pass-template` a new entry with the current name would get, if any. */
-        fun template(): String? =
-            if (original ==
-                null
-            ) {
-                _form.value.name
-                    .trim()
-                    .trim('/')
-                    .takeIf { it.isNotEmpty() }
-                    ?.let { repository.templateFor(it) }
-            } else {
-                null
-            }
 
         fun generate() = edit { it.copy(password = PasswordGenerator.generate()) }
 
@@ -224,8 +239,12 @@ class EditViewModel
                             fields = entry.fields,
                             yaml = entry.yaml,
                         )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: PgpException) {
                     onUnlockFailed(e.message ?: "Could not decrypt")
+                } catch (e: Exception) {
+                    onUnlockFailed(e.message ?: "Could not open $name")
                 } finally {
                     passphrase?.fill('\u0000')
                 }
@@ -234,5 +253,10 @@ class EditViewModel
 
         override fun onUnlockFailed(message: String) {
             _form.update { it.copy(loading = false, error = message) }
+        }
+
+        private companion object {
+            const val TEMPLATE_DEBOUNCE_MILLIS = 300L
+            const val STOP_TIMEOUT_MILLIS = 5_000L
         }
     }

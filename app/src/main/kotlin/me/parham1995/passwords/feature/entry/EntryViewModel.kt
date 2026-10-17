@@ -5,6 +5,7 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -61,10 +62,14 @@ class EntryViewModel
                 _state.value =
                     try {
                         State.Shown(repository.openFollowing(name, passphrase))
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: PgpException) {
                         State.Failed(e.message ?: "Could not decrypt")
                     } catch (e: BrokenReference) {
                         State.Failed(e.message ?: "Broken reference")
+                    } catch (e: Exception) {
+                        State.Failed(e.message ?: "Could not open $name")
                     } finally {
                         passphrase?.fill('\u0000')
                     }

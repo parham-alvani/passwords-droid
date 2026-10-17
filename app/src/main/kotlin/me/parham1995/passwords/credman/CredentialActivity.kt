@@ -10,7 +10,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.credentials.CreatePasswordRequest
@@ -22,6 +21,7 @@ import androidx.credentials.exceptions.CreateCredentialUnknownException
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialUnknownException
 import androidx.credentials.provider.PendingIntentHandler
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import me.parham1995.passwords.ui.theme.PasswordsTheme
 import me.parham1995.passwords.unlock.UnlockPrompts
@@ -51,7 +51,7 @@ class CredentialActivity : ComponentActivity() {
 
         setContent {
             PasswordsTheme {
-                val outcome by viewModel.outcome.collectAsState()
+                val outcome by viewModel.outcome.collectAsStateWithLifecycle()
                 LaunchedEffect(outcome) { outcome?.let(::finishWith) }
                 UnlockPrompts(viewModel)
                 when (mode) {
