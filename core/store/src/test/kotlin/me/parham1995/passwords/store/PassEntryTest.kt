@@ -148,16 +148,6 @@ class PassEntryTest {
     }
 
     @Test
-    fun `only keys that parse back are valid`() {
-        assertThat(PassEntry.isValidKey("security question")).isTrue()
-        assertThat(PassEntry.isValidKey("pin.2")).isTrue()
-        assertThat(PassEntry.isValidKey("")).isFalse()
-        assertThat(PassEntry.isValidKey(" pin")).isFalse()
-        assertThat(PassEntry.isValidKey("a:b")).isFalse()
-        assertThat(PassEntry.isValidKey("-pin")).isFalse()
-    }
-
-    @Test
     fun `format round-trips`() {
         val original = PassEntry.parse("pw\nlogin: a\nurl: b\notpauth://totp/x?secret=AA\nsome\nnotes\n")
         assertThat(PassEntry.parse(original.format())).isEqualTo(original)

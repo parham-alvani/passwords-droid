@@ -32,6 +32,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -133,13 +134,15 @@ fun EditScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
                 modifier = Modifier.fillMaxWidth(),
             )
-            form.fields.forEachIndexed { index, field ->
-                FieldRow(
-                    field = field,
-                    multiline = form.yaml,
-                    onChange = { changed -> viewModel.editField(index) { changed } },
-                    onRemove = { viewModel.removeField(index) },
-                )
+            form.fields.forEach { row ->
+                key(row.id) {
+                    FieldRow(
+                        field = row.field,
+                        multiline = form.yaml,
+                        onChange = { changed -> viewModel.editField(row.id) { changed } },
+                        onRemove = { viewModel.removeField(row.id) },
+                    )
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = viewModel::addField) {
