@@ -55,5 +55,5 @@ object Templates {
         value: String,
     ): String = MessageDigest.getInstance(algorithm).digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
 
-    private val ACTION = Regex("""\{\{-?\s*(.*?)\s*-?}}""")
+    private val ACTION = Regex("""\{\{-?\s*(.*?)\s*-?\}\}""")
 }
