@@ -25,7 +25,7 @@ serialization = "1.11.0"
 # OpenPGP. PGPainless pulls in the BouncyCastle it was built against.
 pgpainless = "2.0.4"
 # age, for one-off share links. Password Store's Kotlin implementation.
-kage = "0.7.0"
+kage = "0.8.0"
 jgit = "7.8.0.202609011348-r"
 eddsa = "0.3.0"
 slf4j = "2.0.20"
