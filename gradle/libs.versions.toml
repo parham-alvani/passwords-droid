@@ -12,6 +12,7 @@ lifecycle = "2.11.0"
 navigation = "2.10.2"
 fragment = "1.9.1"
 credentials = "1.6.0"
+camerax = "1.6.2"
 
 datastore = "1.2.1"
 
@@ -80,8 +81,12 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 
 thirdparty-logcat = "com.squareup.logcat:logcat:0.4"
 
-# QR codes for sharing Wi-Fi; core only, no Android UI
+# QR codes: drawn for sharing Wi-Fi, read for 2FA setup; core only, no Android UI
 zxing-core = "com.google.zxing:core:3.5.4"
+# the camera that scans a 2FA QR code; frames go to zxing, never off the phone
+androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
+androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
+androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
 
 # password strength, the Java port of Dropbox's estimator
 zxcvbn = "com.nulab-inc:zxcvbn:1.9.0"

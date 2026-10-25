@@ -46,6 +46,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.parham1995.passwords.store.LoginMethods
 import me.parham1995.passwords.store.PassEntry
+import me.parham1995.passwords.ui.icon.LucideIcon
 import me.parham1995.passwords.unlock.UnlockPrompts
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,6 +64,7 @@ fun EditScreen(
     val deleted by viewModel.deleted.collectAsStateWithLifecycle()
     val template by viewModel.template.collectAsStateWithLifecycle()
     var confirmDelete by remember { mutableStateOf(false) }
+    var scanOtp by remember { mutableStateOf(false) }
     LaunchedEffect(done) { done?.let(onDone) }
     LaunchedEffect(deleted) { if (deleted) onDeleted() }
     UnlockPrompts(viewModel)
@@ -162,8 +164,19 @@ fun EditScreen(
                 onValueChange = { v -> viewModel.edit { it.copy(otp = v) } },
                 label = { Text("One-time code URI") },
                 placeholder = { Text("otpauth://totp/...") },
+                supportingText =
+                    if (form.otp.isEmpty()) {
+                        { Text("Scan the QR code a site shows when you turn on 2FA") }
+                    } else {
+                        null
+                    },
                 singleLine = true,
                 textStyle = mono,
+                trailingIcon = {
+                    IconButton(onClick = { scanOtp = true }) {
+                        LucideIcon("scan-qr-code", contentDescription = "Scan QR code")
+                    }
+                },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -176,6 +189,16 @@ fun EditScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+    }
+
+    if (scanOtp) {
+        OtpScanDialog(
+            onScanned = { uri ->
+                scanOtp = false
+                viewModel.edit { it.copy(otp = uri) }
+            },
+            onDismiss = { scanOtp = false },
+        )
     }
 
     if (confirmDelete) {
