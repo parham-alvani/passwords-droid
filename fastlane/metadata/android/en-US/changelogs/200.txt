@@ -1,0 +1,1 @@
+Scan the QR code a site shows when you turn on 2FA, with the camera or from a screenshot, to fill an entry's one-time code.
