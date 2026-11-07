@@ -27,7 +27,7 @@ serialization = "1.12.0"
 pgpainless = "2.0.4"
 # age, for one-off share links. Password Store's Kotlin implementation.
 kage = "0.8.0"
-jgit = "7.8.0.202609011348-r"
+jgit = "7.8.1.202611041320-r"
 eddsa = "0.3.0"
 slf4j = "2.0.20"
 
