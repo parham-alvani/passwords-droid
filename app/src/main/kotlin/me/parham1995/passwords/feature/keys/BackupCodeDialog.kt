@@ -26,7 +26,10 @@ fun BackupCodeDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSubmit(code.toCharArray()).also { code.clearText() } }, enabled = code.text.isNotEmpty()) {
+            TextButton(
+                onClick = { onSubmit(code.toCharArray()).also { code.clearText() } },
+                enabled = code.text.isNotEmpty(),
+            ) {
                 Text("Open")
             }
         },

@@ -71,12 +71,11 @@ fun HistoryScreen(
             }
             items(list, key = { it.commit }) { revision ->
                 ListItem(
-                    headlineContent = { Text(revision.message) },
                     supportingContent = {
                         Text("${format(revision.time)} · ${revision.author} · ${revision.commit.take(SHORT_SHA)}")
                     },
                     modifier = Modifier.clickable { viewModel.view(revision) },
-                )
+                ) { Text(revision.message) }
             }
         }
     }

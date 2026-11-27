@@ -79,7 +79,6 @@ fun RecipientsScreen(
             )
             state.candidates.forEach { candidate ->
                 ListItem(
-                    headlineContent = { Text(candidate.label) },
                     supportingContent = {
                         Text(
                             candidate.id + (if (candidate.secret) " · this phone's key" else "") +
@@ -94,7 +93,7 @@ fun RecipientsScreen(
                             onCheckedChange = { viewModel.toggle(candidate.id) },
                         )
                     },
-                )
+                ) { Text(candidate.label) }
             }
             state.progress?.let { (done, total) ->
                 Text("Re-encrypting $done of $total")

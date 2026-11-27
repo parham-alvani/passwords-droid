@@ -179,8 +179,7 @@ private fun Row(
     onOpen: (String) -> Unit,
 ) {
     ListItem(
-        headlineContent = { Text(name) },
         supportingContent = { Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant) },
         modifier = Modifier.clickable { onOpen(name) },
-    )
+    ) { Text(name) }
 }

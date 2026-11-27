@@ -287,7 +287,6 @@ private fun FolderRow(
     onLongClick: (() -> Unit)?,
 ) {
     ListItem(
-        headlineContent = { Text(folder.name) },
         supportingContent = {
             Text(
                 if (folder.count == 1) "1 entry" else "${folder.count} entries",
@@ -312,7 +311,7 @@ private fun FolderRow(
                 onLongClick = onLongClick,
                 onLongClickLabel = "Change icon",
             ),
-    )
+    ) { Text(folder.name) }
 }
 
 @Composable
@@ -323,7 +322,6 @@ private fun EntryRow(
     onClick: () -> Unit,
 ) {
     ListItem(
-        headlineContent = { Text(item.leaf) },
         supportingContent = {
             val context =
                 listOfNotNull(
@@ -337,7 +335,7 @@ private fun EntryRow(
         },
         leadingContent = { Icon(Icons.Default.Lock, null) },
         modifier = Modifier.clickable(onClick = onClick),
-    )
+    ) { Text(item.leaf) }
 }
 
 /**
