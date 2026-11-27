@@ -30,6 +30,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberSliderState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -108,14 +109,14 @@ fun SettingsScreen(
                 Text(
                     "Remember a typed passphrase for ${settings.passphraseMinutes} min (forgotten when the screen locks)",
                 )
-                Slider(
+                SettingSlider(
                     value = settings.passphraseMinutes.toFloat(),
                     onValueChange = { v -> viewModel.update { it.copy(passphraseMinutes = v.toInt()) } },
                     valueRange = 0f..MAX_MINUTES,
                     steps = MAX_MINUTES.toInt() - 1,
                 )
                 Text("Clear the clipboard after ${settings.clipboardSeconds} s")
-                Slider(
+                SettingSlider(
                     value = settings.clipboardSeconds.toFloat(),
                     onValueChange = { v -> viewModel.update { it.copy(clipboardSeconds = v.toInt()) } },
                     valueRange = MIN_CLIPBOARD..MAX_CLIPBOARD,
@@ -136,7 +137,6 @@ fun SettingsScreen(
             Section("OpenPGP keys") {
                 keys.forEach { key ->
                     ListItem(
-                        headlineContent = { Text(key.label) },
                         supportingContent = {
                             Text(
                                 (if (key.secret) "secret · " else "public · ") +
@@ -150,7 +150,7 @@ fun SettingsScreen(
                                 onClick = { viewModel.removeKey(key.fingerprint) },
                             ) { Text("Remove") }
                         },
-                    )
+                    ) { Text(key.label) }
                 }
                 OutlinedButton(onClick = { pickKey.launch(arrayOf("*/*")) }) { Text("Import key") }
             }
@@ -229,6 +229,29 @@ private fun Section(
             content()
         }
     }
+}
+
+/**
+ * A slider that shows a stored setting. The settings load after the first
+ * frame, and a slider given onValueChange does not move its own state, so the
+ * state follows the setting here.
+ */
+@Composable
+private fun SettingSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int = 0,
+) {
+    val state = rememberSliderState(value, steps, valueRange)
+    LaunchedEffect(value) { state.value = value }
+    Slider(
+        state = state,
+        onValueChange = { v ->
+            state.value = v
+            onValueChange(v)
+        },
+    )
 }
 
 private const val MAX_MINUTES = 30f

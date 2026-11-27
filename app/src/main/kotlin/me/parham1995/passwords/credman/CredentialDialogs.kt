@@ -65,7 +65,6 @@ internal fun SearchDialog(viewModel: CredentialViewModel) {
                 LazyColumn(Modifier.heightIn(max = 360.dp)) {
                     items(results, key = { it.name }) { item ->
                         ListItem(
-                            headlineContent = { Text(item.leaf) },
                             supportingContent = {
                                 Text(
                                     item.folder,
@@ -78,7 +77,7 @@ internal fun SearchDialog(viewModel: CredentialViewModel) {
                                     picked = true
                                     viewModel.fill(item.name)
                                 },
-                        )
+                        ) { Text(item.leaf) }
                     }
                 }
             }

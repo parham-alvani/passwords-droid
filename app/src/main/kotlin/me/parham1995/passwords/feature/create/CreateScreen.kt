@@ -137,12 +137,11 @@ private fun TemplateList(
     LazyColumn(modifier) {
         item(key = "blank") {
             ListItem(
-                headlineContent = { Text("Blank entry") },
                 supportingContent = { Text("A password and any fields you add") },
                 leadingContent = { Icon(Icons.Default.Create, null) },
                 trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
                 modifier = Modifier.clickable(onClick = onBlank),
-            )
+            ) { Text("Blank entry") }
         }
         item(key = "divider") { HorizontalDivider(Modifier.padding(horizontal = 16.dp)) }
         item(key = "header") {
@@ -158,14 +157,13 @@ private fun TemplateList(
         } else {
             itemsIndexed(templates, key = { index, template -> "t:$index:${template.name}" }) { _, template ->
                 ListItem(
-                    headlineContent = { Text(template.name.ifEmpty { "Unnamed template" }) },
                     supportingContent = {
                         val where = template.prefix.trim('/').ifEmpty { "the store" }
                         Text("Saved under $where", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     },
                     trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
                     modifier = Modifier.clickable { onPick(template) },
-                )
+                ) { Text(template.name.ifEmpty { "Unnamed template" }) }
             }
         }
     }

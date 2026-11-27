@@ -145,7 +145,6 @@ fun SharingSection(viewModel: SettingsViewModel) {
         shares.forEach { share ->
             val description = "${share.name}, ${share.kind.label}, ${formatted(share.createdMillis)}"
             ListItem(
-                headlineContent = { Text(share.name) },
                 supportingContent = { Text("${share.kind.label} · ${formatted(share.createdMillis)}") },
                 trailingContent = {
                     TextButton(
@@ -154,7 +153,7 @@ fun SharingSection(viewModel: SettingsViewModel) {
                         modifier = Modifier.semantics { contentDescription = "Revoke $description" },
                     ) { Text("Revoke") }
                 },
-            )
+            ) { Text(share.name) }
         }
     }
 
