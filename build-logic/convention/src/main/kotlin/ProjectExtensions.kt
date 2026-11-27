@@ -6,6 +6,9 @@ import org.gradle.kotlin.dsl.getByType
 /** The single place the SDK levels are declared. Every module inherits these. */
 internal object AndroidSdk {
     const val COMPILE = 37
+
+    /** Compose 1.13 (BOM 2026.11.01) asks for API 37.1 or later to compile against. */
+    const val COMPILE_MINOR = 2
     const val TARGET = 37
 
     /**

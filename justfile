@@ -14,7 +14,7 @@ default:
 [group('setup')]
 sdk:
     brew install --cask android-commandlinetools
-    sdkmanager --install "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
+    sdkmanager --install "platform-tools" "platforms;android-37.2" "build-tools;37.0.0"
     yes | sdkmanager --licenses
 
 # check that the toolchain is actually usable
@@ -23,7 +23,7 @@ doctor:
     @echo "JAVA_HOME    = $JAVA_HOME"
     @echo "ANDROID_HOME = $ANDROID_HOME"
     @"$JAVA_HOME/bin/java" -version
-    @test -d "$ANDROID_HOME/platforms/android-37.0" && echo "platform      ok" || echo "platform      MISSING - run 'just sdk'"
+    @test -d "$ANDROID_HOME/platforms/android-37.2" && echo "platform      ok" || echo "platform      MISSING - run 'just sdk'"
     @test -d "$ANDROID_HOME/build-tools/37.0.0" && echo "build-tools   ok" || echo "build-tools   MISSING - run 'just sdk'"
     @echo "sdk.dir       $(grep -s '^sdk.dir' local.properties || echo 'MISSING in local.properties')"
 
