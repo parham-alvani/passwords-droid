@@ -4,12 +4,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.clearText
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -24,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.parham1995.passwords.data.share.ShareRepository
@@ -46,7 +48,7 @@ fun SharingSection(viewModel: SettingsViewModel) {
     var repository by remember { mutableStateOf("") }
     var branch by remember { mutableStateOf("") }
     var prefix by remember { mutableStateOf("") }
-    var token by remember { mutableStateOf("") }
+    val token = rememberTextFieldState()
     var revoking by remember { mutableStateOf<ShareRepository.Share?>(null) }
     LaunchedEffect(Unit) {
         val current = viewModel.currentSettings()
@@ -61,14 +63,13 @@ fun SharingSection(viewModel: SettingsViewModel) {
             repository,
             branch,
             prefix,
-            token
-                .takeIf {
-                    it.isNotBlank()
-                }?.trim()
-                ?.toCharArray(),
+            token.text
+                .takeIf { it.isNotBlank() }
+                ?.trim()
+                ?.let { chars -> CharArray(chars.length) { chars[it] } },
             test,
         )
-        token = ""
+        token.clearText()
     }
 
     Text(
@@ -118,13 +119,9 @@ fun SharingSection(viewModel: SettingsViewModel) {
             TextButton(onClick = viewModel::removeShareToken) { Text("Remove") }
         }
     } else {
-        OutlinedTextField(
-            value = token,
-            onValueChange = { token = it },
+        OutlinedSecureTextField(
+            state = token,
             label = { Text("GitHub token") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -132,7 +129,7 @@ fun SharingSection(viewModel: SettingsViewModel) {
         OutlinedButton(onClick = { save(false) }, enabled = !busy) { Text("Save") }
         OutlinedButton(
             onClick = { save(true) },
-            enabled = !busy && (tokenSaved || token.isNotBlank()) && repository.isNotBlank(),
+            enabled = !busy && (tokenSaved || token.text.isNotBlank()) && repository.isNotBlank(),
         ) { Text("Test") }
     }
     if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())

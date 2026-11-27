@@ -2,11 +2,12 @@ package me.parham1995.passwords.unlock
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.clearText
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -21,7 +22,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import me.parham1995.passwords.ui.toCharArray
 
 @Composable
 fun PassphraseDialog(
@@ -31,13 +32,13 @@ fun PassphraseDialog(
     onSubmit: (passphrase: CharArray, useBiometric: Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var text by remember { mutableStateOf("") }
+    val text = rememberTextFieldState()
     var useBiometric by remember { mutableStateOf(offerBiometric) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
     val submit = {
         onSubmit(text.toCharArray(), useBiometric)
-        text = ""
+        text.clearText()
     }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -45,20 +46,17 @@ fun PassphraseDialog(
         text = {
             Column {
                 Text(label)
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    singleLine = true,
+                OutlinedSecureTextField(
+                    state = text,
                     isError = wrong,
                     supportingText = { if (wrong) Text("Wrong passphrase") },
-                    visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions =
                         KeyboardOptions(
                             keyboardType = KeyboardType.Password,
                             imeAction = ImeAction.Done,
                             autoCorrectEnabled = false,
                         ),
-                    keyboardActions = KeyboardActions(onDone = { submit() }),
+                    onKeyboardAction = { submit() },
                     modifier = Modifier.focusRequester(focus),
                 )
                 if (offerBiometric) {
@@ -69,7 +67,7 @@ fun PassphraseDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = submit, enabled = text.isNotEmpty()) { Text("Unlock") } },
+        confirmButton = { TextButton(onClick = submit, enabled = text.text.isNotEmpty()) { Text("Unlock") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

@@ -14,6 +14,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextObfuscationMode
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -25,6 +28,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -33,6 +37,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -45,7 +50,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -53,8 +60,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -331,17 +336,26 @@ private fun PasswordField(
             WizardForm.lengthError(attribute, answer.value)
                 ?: if (showErrors && answer.value.isEmpty()) "Required" else null
         }
-    OutlinedTextField(
-        value = answer.value,
-        onValueChange = { v -> viewModel.edit { it.withPassword(attribute) { a -> a.copy(value = v) } } },
+    // The form owns the answer, and Generate writes it there: the field follows
+    // the form, and what is typed goes back to it.
+    val state = rememberTextFieldState(answer.value)
+    LaunchedEffect(answer.value) {
+        if (!state.text.contentEquals(answer.value)) state.setTextAndPlaceCursorAtEnd(answer.value)
+    }
+    val current by rememberUpdatedState(answer.value)
+    LaunchedEffect(state, attribute) {
+        snapshotFlow { state.text.toString() }.collect { v ->
+            if (v != current) viewModel.edit { it.withPassword(attribute) { a -> a.copy(value = v) } }
+        }
+    }
+    OutlinedSecureTextField(
+        state = state,
         label = { Text(attribute.label) },
         isError = error != null,
         supportingText = error?.let { { Text(it) } },
-        singleLine = true,
         textStyle = TextStyle(fontFamily = FontFamily.Monospace),
-        visualTransformation = if (revealed) VisualTransformation.None else PasswordVisualTransformation(),
+        textObfuscationMode = if (revealed) TextObfuscationMode.Visible else TextObfuscationMode.System,
         trailingIcon = { TextButton(onClick = { revealed = !revealed }) { Text(if (revealed) "Hide" else "Show") } },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
         modifier = Modifier.fillMaxWidth(),
     )
     if (!attribute.alwaysPrompt) {
