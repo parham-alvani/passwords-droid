@@ -1,0 +1,1 @@
+Built on Compose 1.13 and Material 3 1.5. The passphrase, backup code, GitHub token and password fields use the new secure text field.
